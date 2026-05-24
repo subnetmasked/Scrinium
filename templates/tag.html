@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}#{{ tag }} — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="doc-header">
+    <nav class="crumbs">
+      <a class="muted" href="{{ url_for('index') }}">Home</a>
+      <span class="sep">/</span>
+      <span>tag: <strong>{{ tag }}</strong></span>
+    </nav>
+    <div class="doc-actions">
+      <a class="btn" href="{{ url_for('search', q=tag) }}">Search “{{ tag }}”</a>
+    </div>
+  </div>
+
+  <article class="doc-body">
+    <h1>
+      <span class="tag-chip lg">{{ tag }}</span>
+      <span class="muted small" style="margin-left:.5rem; font-weight:normal;">
+        {{ matches | length }} entr{{ 'y' if matches | length == 1 else 'ies' }}
+      </span>
+    </h1>
+
+    {% if matches %}
+      <ul class="entry-grid">
+        {% for m in matches %}
+          <li>
+            <a href="{{ url_for('folder', path=m.rel) }}" class="entry-card">
+              <div class="entry-card-head">
+                <span class="entry-card-name">
+                  <span class="cat-icon-sm">{{ category_icon(m.category.icon) | safe }}</span>
+                  {{ m.name }}
+                </span>
+                <span class="muted small">{{ m.category.name }}</span>
+              </div>
+              {% if m.tags %}
+                <div class="entry-card-tags">
+                  {% for t in m.tags %}
+                    {% if t.lower() == tag.lower() %}
+                      <span class="tag-chip current">{{ t }}</span>
+                    {% else %}
+                      <span class="tag-chip">{{ t }}</span>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">
+        No entries are tagged <strong>{{ tag }}</strong>.
+        <a href="{{ url_for('index') }}">Back to dashboard</a>.
+      </p>
+    {% endif %}
+  </article>
+{% endblock %}

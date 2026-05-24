@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Users — Admin — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="admin-tabs">
+    <a class="tab active" href="{{ url_for('admin_users') }}">Users</a>
+    <a class="tab" href="{{ url_for('admin_categories') }}">Categories</a>
+    <a class="tab" href="{{ url_for('admin_ldap') }}">LDAP</a>
+  </div>
+
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
+
+  <article class="doc-body">
+    <h2>Add user</h2>
+    <form method="post" action="{{ url_for('admin_users') }}" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="create">
+      <label>
+        <span>Username</span>
+        <input name="username" required spellcheck="false" autocomplete="off">
+      </label>
+      <label>
+        <span>Password <small class="muted">(at least 8 characters)</small></span>
+        <input name="password" type="password" required minlength="8" autocomplete="new-password">
+      </label>
+      <label class="inline">
+        <input type="checkbox" name="is_admin" value="1">
+        Administrator
+      </label>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Add user</button>
+      </div>
+    </form>
+
+    <h2 class="mt-2">Users</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Source</th>
+          <th>Admin</th>
+          <th>Created</th>
+          <th>Last login</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+          <tr>
+            <td>
+              <strong>{{ u.username }}</strong>
+              {% if me and u.id == me.id %}<span class="muted">(you)</span>{% endif %}
+            </td>
+            <td><span class="badge {{ u.source }}">{{ u.source }}</span></td>
+            <td>
+              {% if u.is_admin %}<span class="badge admin">admin</span>{% else %}<span class="muted">—</span>{% endif %}
+            </td>
+            <td class="muted small">{{ (u.created_at or '')[:10] }}</td>
+            <td class="muted small">{{ (u.last_login or '—')[:16].replace('T',' ') }}</td>
+            <td class="row-actions">
+              {% if u.source == 'local' %}
+                <form method="post" action="{{ url_for('admin_users') }}" class="inline-form"
+                      onsubmit="return promptPassword(this);">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="set_password">
+                  <input type="hidden" name="user_id" value="{{ u.id }}">
+                  <input type="hidden" name="password" value="">
+                  <button class="btn" type="submit">Set password</button>
+                </form>
+              {% endif %}
+              <form method="post" action="{{ url_for('admin_users') }}" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="toggle_admin">
+                <input type="hidden" name="user_id" value="{{ u.id }}">
+                <button class="btn" type="submit">
+                  {% if u.is_admin %}Demote{% else %}Promote{% endif %}
+                </button>
+              </form>
+              <form method="post" action="{{ url_for('admin_users') }}" class="inline-form"
+                    onsubmit="return confirm('Delete user {{ u.username }}?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="user_id" value="{{ u.id }}">
+                <button class="btn danger" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+
+  <script>
+    function promptPassword(form) {
+      const v = window.prompt('New password (min 8 chars):');
+      if (v === null) return false;
+      if (v.length < 8) { alert('Password must be at least 8 characters.'); return false; }
+      form.querySelector('input[name="password"]').value = v;
+      return true;
+    }
+  </script>
+{% endblock %}

@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Categories — Admin — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="admin-tabs">
+    <a class="tab" href="{{ url_for('admin_users') }}">Users</a>
+    <a class="tab active" href="{{ url_for('admin_categories') }}">Categories</a>
+    <a class="tab" href="{{ url_for('admin_ldap') }}">LDAP</a>
+  </div>
+
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
+
+  {% macro icon_picker(field_name, current) -%}
+    <fieldset class="icon-picker">
+      <legend>Icon</legend>
+      {% for name in icon_names %}
+        <label class="icon-pick" title="{{ name }}">
+          <input type="radio" name="{{ field_name }}" value="{{ name }}"
+                 {% if current == name or (loop.first and not current) %}checked{% endif %}>
+          <span class="icon-pick-box">{{ category_icon(name) | safe }}</span>
+        </label>
+      {% endfor %}
+    </fieldset>
+  {%- endmacro %}
+
+  <article class="doc-body">
+    <p class="muted">
+      Categories group related entries (servers, applications, network devices,
+      and so on). Each becomes its own section in the sidebar with an
+      <em>Add</em> button. Drag the cards below to reorder.
+    </p>
+
+    <h2>Add category</h2>
+    <form method="post" action="{{ url_for('admin_categories') }}" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="create">
+      <div class="form-row">
+        <label>
+          <span>Name</span>
+          <input name="name" required placeholder="e.g. Servers">
+        </label>
+        <label>
+          <span>Slug <small class="muted">(URL/folder name; auto from Name if empty)</small></span>
+          <input name="slug" placeholder="auto" pattern="[a-z0-9][a-z0-9_-]*" spellcheck="false">
+        </label>
+      </div>
+      <div class="form-row">
+        <label>
+          <span>Noun <small class="muted">(singular, used in “+ Add server”)</small></span>
+          <input name="noun" placeholder="e.g. server" value="entry">
+        </label>
+        <label>
+          <span>Description <small class="muted">(optional)</small></span>
+          <input name="description" placeholder="Physical hosts and VMs.">
+        </label>
+      </div>
+      {{ icon_picker("icon", "folder") }}
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Add category</button>
+      </div>
+    </form>
+
+    <h2 class="mt-2">Categories</h2>
+    {% if categories %}
+      <ul class="cat-list" id="cat-list">
+        {% for c in categories %}
+          <li class="cat-card" data-slug="{{ c.slug }}" draggable="true">
+            <details>
+              <summary>
+                <span class="drag-handle" title="Drag to reorder">⠿</span>
+                <span class="cat-card-icon">{{ category_icon(c.icon) | safe }}</span>
+                <strong>{{ c.name }}</strong>
+                <code class="muted slug-code">/{{ c.slug }}</code>
+                <span class="muted small">add a {{ c.noun }}</span>
+                {% if not c.folder_exists %}
+                  <span class="badge muted-badge" title="Folder data/{{ c.slug }} does not yet exist">empty</span>
+                {% endif %}
+                <span class="cat-list-actions">
+                  <form method="post" action="{{ url_for('admin_categories') }}" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="move">
+                    <input type="hidden" name="slug" value="{{ c.slug }}">
+                    <input type="hidden" name="direction" value="up">
+                    <button class="btn small" type="submit" title="Move up">↑</button>
+                  </form>
+                  <form method="post" action="{{ url_for('admin_categories') }}" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="move">
+                    <input type="hidden" name="slug" value="{{ c.slug }}">
+                    <input type="hidden" name="direction" value="down">
+                    <button class="btn small" type="submit" title="Move down">↓</button>
+                  </form>
+                </span>
+              </summary>
+
+              <form method="post" action="{{ url_for('admin_categories') }}" class="form mt-1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="update">
+                <input type="hidden" name="slug" value="{{ c.slug }}">
+                <div class="form-row">
+                  <label>
+                    <span>Name</span>
+                    <input name="name" required value="{{ c.name }}">
+                  </label>
+                  <label>
+                    <span>Noun</span>
+                    <input name="noun" value="{{ c.noun }}">
+                  </label>
+                </div>
+                <label>
+                  <span>Description</span>
+                  <input name="description" value="{{ c.description or '' }}">
+                </label>
+                {{ icon_picker("icon", c.icon) }}
+                <div class="form-actions">
+                  <button class="btn primary" type="submit">Save</button>
+                </div>
+              </form>
+
+              <form method="post" action="{{ url_for('admin_categories') }}" class="form mt-1"
+                    onsubmit="return confirm('Remove the {{ c.name }} category?{% if c.folder_exists %} The data/{{ c.slug }} folder will only be deleted if you tick the box below.{% endif %}');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="slug" value="{{ c.slug }}">
+                <label class="inline">
+                  <input type="checkbox" name="remove_folder" value="1">
+                  Also delete <code>data/{{ c.slug }}/</code> and all its contents
+                </label>
+                <div class="form-actions">
+                  <button class="btn danger" type="submit">Remove category</button>
+                </div>
+              </form>
+            </details>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No categories defined. Add one above.</p>
+    {% endif %}
+  </article>
+
+  <script>
+    (function () {
+      const list = document.getElementById('cat-list');
+      if (!list) return;
+      const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+      const csrf = csrfMeta ? csrfMeta.content : '';
+      let dragged = null;
+      let saveTimer = null;
+
+      list.addEventListener('dragstart', (e) => {
+        const card = e.target.closest('.cat-card');
+        if (!card) return;
+        dragged = card;
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', card.dataset.slug); } catch (_) {}
+      });
+
+      list.addEventListener('dragend', () => {
+        if (dragged) dragged.classList.remove('dragging');
+        dragged = null;
+        list.querySelectorAll('.drag-over').forEach(n => n.classList.remove('drag-over'));
+        scheduleSave();
+      });
+
+      list.addEventListener('dragover', (e) => {
+        if (!dragged) return;
+        e.preventDefault();
+        const target = e.target.closest('.cat-card');
+        if (!target || target === dragged) return;
+        const rect = target.getBoundingClientRect();
+        const after = (e.clientY - rect.top) / rect.height > 0.5;
+        list.querySelectorAll('.drag-over').forEach(n => n.classList.remove('drag-over'));
+        target.classList.add('drag-over');
+        list.insertBefore(dragged, after ? target.nextSibling : target);
+      });
+
+      function scheduleSave() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveOrder, 150);
+      }
+
+      function saveOrder() {
+        const slugs = [...list.querySelectorAll('.cat-card')].map(li => li.dataset.slug);
+        const fd = new FormData();
+        fd.append('action', 'reorder_full');
+        fd.append('csrf_token', csrf);
+        slugs.forEach(s => fd.append('slugs[]', s));
+        fetch('{{ url_for("admin_categories") }}', {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'scrinium-fetch' },
+        }).then(r => {
+          if (r.ok) flashSaved();
+        }).catch(() => {});
+      }
+
+      let flashTimer = null;
+      function flashSaved() {
+        let pill = document.getElementById('drag-saved');
+        if (!pill) {
+          pill = document.createElement('div');
+          pill.id = 'drag-saved';
+          pill.className = 'drag-saved';
+          pill.textContent = 'Order saved';
+          document.body.appendChild(pill);
+        }
+        pill.classList.add('visible');
+        clearTimeout(flashTimer);
+        flashTimer = setTimeout(() => pill.classList.remove('visible'), 1200);
+      }
+    })();
+  </script>
+{% endblock %}

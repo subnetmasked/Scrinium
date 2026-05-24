@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="doc-header">
+    <nav class="crumbs">
+      {% for c in crumbs %}
+        {% if c.is_leaf %}
+          <span>{{ c.name }}</span>
+        {% else %}
+          <a class="muted" href="{{ url_for('folder', path=c.rel) }}">{{ c.name }}</a>
+          <span class="sep">/</span>
+        {% endif %}
+      {% endfor %}
+    </nav>
+    <div class="doc-actions">
+      <a class="btn" href="{{ url_for('edit', path=rel) }}">Edit</a>
+      <form action="{{ url_for('delete', path=rel) }}" method="post"
+            onsubmit="return confirm('Delete this document?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn danger" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+
+  <article class="doc-body">
+    {{ html | safe }}
+  </article>
+{% endblock %}

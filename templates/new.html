@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}New — {{ site_name }}{% endblock %}
+{% block content %}
+  <article class="doc-body narrow">
+    <h1>New</h1>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('new') }}" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>
+        <span>Path</span>
+        <input name="path" value="{{ path_value }}" required autofocus
+               placeholder="e.g. infra/network/firewall-runbook"
+               spellcheck="false">
+        <small class="muted">
+          Use <code>/</code> to nest. Missing parent folders are created automatically.
+        </small>
+      </label>
+
+      <fieldset class="kind">
+        <legend>Type</legend>
+        <label class="inline">
+          <input type="radio" name="kind" value="doc"
+                 {% if kind != 'folder' %}checked{% endif %}>
+          Document
+        </label>
+        <label class="inline">
+          <input type="radio" name="kind" value="folder"
+                 {% if kind == 'folder' %}checked{% endif %}>
+          Folder
+        </label>
+      </fieldset>
+
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Create</button>
+        <a class="btn" href="{{ url_for('index') }}">Cancel</a>
+      </div>
+    </form>
+  </article>
+  <script>
+    (function () {
+      const input = document.querySelector('input[name="path"]');
+      if (input && input.value) {
+        const v = input.value;
+        input.focus();
+        input.setSelectionRange(v.length, v.length);
+      }
+    })();
+  </script>
+{% endblock %}

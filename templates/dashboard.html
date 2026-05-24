@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Home — {{ site_name }}{% endblock %}
+{% block content %}
+  <section class="dash-hero">
+    <div class="dash-hero-greeting">
+      <h1>
+        {% if current_user %}
+          Welcome back, {{ current_user.username }}.
+        {% else %}
+          Welcome to {{ site_name }}.
+        {% endif %}
+      </h1>
+      <p class="muted">
+        <strong>{{ stats.total_docs }}</strong>
+          document{{ '' if stats.total_docs == 1 else 's' }}
+        ·
+        <strong>{{ stats.total_entries }}</strong>
+          entr{{ 'y' if stats.total_entries == 1 else 'ies' }}
+          across {{ stats.categories | length }}
+          categor{{ 'y' if stats.categories | length == 1 else 'ies' }}
+        ·
+        <strong>{{ stats.total_tags }}</strong>
+          tag{{ '' if stats.total_tags == 1 else 's' }}
+      </p>
+    </div>
+    <div class="dash-hero-actions">
+      <a class="btn primary" href="{{ url_for('new') }}">+ New doc</a>
+      {% for cat in stats.categories[:3] %}
+        <a class="btn" href="{{ url_for('entry_new', slug=cat.slug) }}">+ {{ cat.noun|capitalize }}</a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="dash-grid">
+    <article class="dash-card">
+      <div class="dash-card-head">
+        <h2>Categories</h2>
+      </div>
+      {% if stats.categories %}
+        <ul class="dash-cat-list">
+          {% for cat in stats.categories %}
+            <li>
+              <a class="dash-cat-row" href="{{ url_for('folder', path=cat.slug) }}">
+                <span class="cat-icon-md">{{ category_icon(cat.icon) | safe }}</span>
+                <div class="dash-cat-text">
+                  <div class="dash-cat-name">{{ cat.name }}</div>
+                  <div class="muted small">
+                    {{ cat.entry_count }} {{ cat.noun }}{{ '' if cat.entry_count == 1 else 's' }}
+                    · {{ cat.doc_count }} doc{{ '' if cat.doc_count == 1 else 's' }}
+                  </div>
+                </div>
+              </a>
+              <a class="dash-cat-add" href="{{ url_for('entry_new', slug=cat.slug) }}"
+                 title="Add {{ cat.noun }}">+</a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No categories defined.
+          {% if current_user and current_user.is_admin %}
+            <a href="{{ url_for('admin_categories') }}">Add one in Admin → Categories.</a>
+          {% endif %}
+        </p>
+      {% endif %}
+    </article>
+
+    <article class="dash-card">
+      <div class="dash-card-head">
+        <h2>Recently updated</h2>
+        <a class="muted small" href="{{ url_for('search') }}">Search →</a>
+      </div>
+      {% if recent_docs %}
+        <ul class="dash-recent">
+          {% for d in recent_docs %}
+            <li>
+              <a class="dash-recent-title" href="{{ url_for('view', path=d.rel) }}">{{ d.title }}</a>
+              <div class="muted small">{{ d.location }} · <span title="{{ d.mtime }}">{{ d.mtime | reltime }}</span></div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No documents yet.
+          <a href="{{ url_for('new') }}">Create the first one</a>.
+        </p>
+      {% endif %}
+    </article>
+
+    <article class="dash-card">
+      <div class="dash-card-head">
+        <h2>Recent entries</h2>
+      </div>
+      {% if recent_entries %}
+        <ul class="dash-recent">
+          {% for e in recent_entries %}
+            <li>
+              <a class="dash-recent-title" href="{{ url_for('folder', path=e.rel) }}">
+                <span class="cat-icon-sm">{{ category_icon(e.category_icon) | safe }}</span>
+                {{ e.name }}
+              </a>
+              <div class="muted small">{{ e.category_name }} · <span title="{{ e.ctime }}">{{ e.ctime | reltime }}</span></div>
+              {% if e.tags %}
+                <div class="entry-card-tags">
+                  {% for t in e.tags %}
+                    <a class="tag-chip" href="{{ url_for('tag_page', tag=t) }}">{{ t }}</a>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No entries yet. Pick a category in the sidebar and hit <strong>+</strong>.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  {% if tag_cloud %}
+    <section class="dash-card dash-tags">
+      <div class="dash-card-head">
+        <h2>Tags</h2>
+        <span class="muted small">{{ stats.total_tags }} unique</span>
+      </div>
+      <div class="tag-cloud">
+        {% for t in tag_cloud %}
+          <a class="tag-chip" href="{{ url_for('tag_page', tag=t.name) }}">
+            {{ t.name }}<span class="tag-count muted">{{ t.count }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% if welcome_html %}
+    <section class="dash-card dash-pinned">
+      <div class="dash-card-head">
+        <h2>Pinned: welcome</h2>
+        {% if current_user %}
+          <a class="muted small" href="{{ url_for('edit', path='welcome') }}">Edit →</a>
+        {% endif %}
+      </div>
+      <div class="doc-body welcome-content">
+        {{ welcome_html | safe }}
+      </div>
+    </section>
+  {% elif current_user and current_user.is_admin %}
+    <section class="dash-card dash-pinned dash-pinned-empty">
+      <div class="dash-card-head">
+        <h2>Pinned message</h2>
+      </div>
+      <p class="muted">
+        Create <code>welcome.md</code> at the root of <code>data/</code>
+        and it will be pinned here for everyone.
+        <a href="{{ url_for('new') }}?path=welcome&amp;kind=doc">Create welcome.md →</a>
+      </p>
+    </section>
+  {% endif %}
+{% endblock %}

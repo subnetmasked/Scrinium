@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign in — {{ site_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="centered">
+  <main class="auth-card">
+    <h1 class="auth-title">{{ site_name }}</h1>
+    <p class="muted auth-subtitle">Sign in to continue</p>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('login') }}" class="form" autocomplete="on">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <label>
+        <span>Username</span>
+        <input name="username" required autofocus value="{{ username_value }}"
+               autocomplete="username" spellcheck="false">
+      </label>
+      <label>
+        <span>Password</span>
+        <input name="password" type="password" required autocomplete="current-password">
+      </label>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Sign in</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

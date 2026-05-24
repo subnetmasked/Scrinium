@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}LDAP — Admin — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="admin-tabs">
+    <a class="tab" href="{{ url_for('admin_users') }}">Users</a>
+    <a class="tab" href="{{ url_for('admin_categories') }}">Categories</a>
+    <a class="tab active" href="{{ url_for('admin_ldap') }}">LDAP</a>
+  </div>
+
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
+  {% if test_result %}
+    <div class="alert {{ 'error' if not test_result.ok else '' }}">
+      <strong>{{ 'OK' if test_result.ok else 'Failed' }}:</strong> {{ test_result.message }}
+    </div>
+  {% endif %}
+
+  <article class="doc-body">
+    <p class="muted">
+      Configure an LDAP / Active Directory server for authentication.
+      When enabled, users not found locally can sign in with their LDAP
+      credentials and (optionally) be auto-provisioned as regular users.
+    </p>
+
+    <form method="post" action="{{ url_for('admin_ldap') }}" class="form ldap-form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <label class="inline">
+        <input type="checkbox" name="enabled" value="1" {% if s.enabled %}checked{% endif %}>
+        Enable LDAP authentication
+      </label>
+
+      <label>
+        <span>Server URI</span>
+        <input name="server_uri" value="{{ s.server_uri }}"
+               placeholder="ldaps://ldap.example.com:636 or ldap://ldap.example.com:389"
+               spellcheck="false">
+      </label>
+
+      <div class="form-row">
+        <label>
+          <span>Bind DN <small class="muted">(service account, optional)</small></span>
+          <input name="bind_dn" value="{{ s.bind_dn }}"
+                 placeholder="cn=svc-scrinium,ou=Service,dc=example,dc=com"
+                 spellcheck="false">
+        </label>
+        <label>
+          <span>Bind password
+            {% if has_password %}<small class="muted">(leave empty to keep saved)</small>{% endif %}
+          </span>
+          <input name="bind_password" type="password"
+                 placeholder="{% if has_password %}••••••••{% endif %}"
+                 autocomplete="new-password">
+        </label>
+      </div>
+
+      <label>
+        <span>User search base DN</span>
+        <input name="user_base_dn" value="{{ s.user_base_dn }}"
+               placeholder="ou=Users,dc=example,dc=com"
+               spellcheck="false">
+      </label>
+
+      <label>
+        <span>User filter <small class="muted">(use <code>{username}</code>)</small></span>
+        <input name="user_filter" value="{{ s.user_filter }}"
+               placeholder="(uid={username}) or (sAMAccountName={username})"
+               spellcheck="false">
+      </label>
+
+      <div class="form-row">
+        <label>
+          <span>Connect timeout (seconds)</span>
+          <input name="connect_timeout" type="number" min="1" max="60"
+                 value="{{ s.connect_timeout }}">
+        </label>
+        <div class="checkbox-group">
+          <label class="inline">
+            <input type="checkbox" name="use_starttls" value="1"
+                   {% if s.use_starttls %}checked{% endif %}>
+            Use StartTLS
+          </label>
+          <label class="inline">
+            <input type="checkbox" name="verify_cert" value="1"
+                   {% if s.verify_cert %}checked{% endif %}>
+            Verify TLS certificate
+          </label>
+          <label class="inline">
+            <input type="checkbox" name="auto_provision" value="1"
+                   {% if s.auto_provision %}checked{% endif %}>
+            Auto-provision LDAP users on first login
+          </label>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn primary" type="submit" name="action" value="save">Save</button>
+        <button class="btn" type="submit" name="action" value="test">Test connection</button>
+      </div>
+    </form>
+  </article>
+{% endblock %}

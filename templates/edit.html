@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Edit · {{ title }} — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="doc-header">
+    <nav class="crumbs">
+      {% for c in crumbs %}
+        {% if c.is_leaf %}
+          <span>{{ c.name }}</span>
+        {% else %}
+          <a class="muted" href="{{ url_for('folder', path=c.rel) }}">{{ c.name }}</a>
+          <span class="sep">/</span>
+        {% endif %}
+      {% endfor %}
+      <span class="muted">· editing</span>
+    </nav>
+    <div class="doc-actions">
+      <button class="btn" type="button" id="toggle-preview">Preview</button>
+      <button class="btn primary" form="edit-form" type="submit">Save</button>
+      <a class="btn" href="{{ url_for('view', path=rel) }}">Cancel</a>
+    </div>
+  </div>
+
+  <form id="edit-form" class="editor" method="post" action="{{ url_for('edit', path=rel) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <textarea id="editor-body" name="body" spellcheck="false">{{ body }}</textarea>
+  </form>
+
+  <article id="preview" class="doc-body preview hidden"></article>
+
+  <script src="{{ url_for('static', filename='editor.js') }}"></script>
+{% endblock %}

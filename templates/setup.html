@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>First-time setup — {{ site_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="centered">
+  <main class="auth-card wide">
+    <h1 class="auth-title">{{ site_name }}</h1>
+    <p class="muted auth-subtitle">Create the first administrator account.</p>
+
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('setup') }}" class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>
+        <span>Username</span>
+        <input name="username" required autofocus value="{{ username_value }}"
+               spellcheck="false" autocomplete="username">
+      </label>
+      <label>
+        <span>Password <small class="muted">(at least 8 characters)</small></span>
+        <input name="password" type="password" required minlength="8"
+               autocomplete="new-password">
+      </label>
+      <label>
+        <span>Confirm password</span>
+        <input name="confirm" type="password" required minlength="8"
+               autocomplete="new-password">
+      </label>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Create admin and sign in</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

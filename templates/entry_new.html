@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}New {{ category.noun }} — {{ site_name }}{% endblock %}
+{% block content %}
+  <article class="doc-body narrow">
+    <h1>New {{ category.noun }}</h1>
+    <p class="muted">
+      Adds an entry under
+      <a href="{{ url_for('folder', path=category.slug) }}">{{ category.name }}</a>.
+      An <code>overview.md</code> page will be created automatically.
+    </p>
+
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('entry_new', slug=category.slug) }}"
+          class="form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>
+        <span>{{ category.noun|capitalize }} name</span>
+        <input name="name" value="{{ name_value }}" required autofocus
+               placeholder="e.g. web-01" spellcheck="false">
+      </label>
+      <label>
+        <span>Tags <small class="muted">(optional, comma-separated)</small></span>
+        <input name="tags" value="{{ tags_value }}"
+               placeholder="prod, web, nginx" spellcheck="false">
+      </label>
+      <label>
+        <span>Description <small class="muted">(optional)</small></span>
+        <textarea name="description" rows="4"
+                  placeholder="Short summary that goes into overview.md.">{{ description_value }}</textarea>
+      </label>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Create</button>
+        <a class="btn" href="{{ url_for('folder', path=category.slug) }}">Cancel</a>
+      </div>
+    </form>
+  </article>
+{% endblock %}

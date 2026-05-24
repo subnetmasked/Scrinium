@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}
+  {%- if selected_category -%}Search — {{ selected_category.name }}
+  {%- else -%}Search
+  {%- endif %} — {{ site_name }}
+{% endblock %}
+{% block content %}
+  <article class="doc-body">
+    <h1>Search</h1>
+    <form action="{{ url_for('search') }}" method="get" class="form search-form">
+      <div class="search-row">
+        <input name="q" type="search" value="{{ q }}" autofocus
+               placeholder="Search documents…" class="search-q">
+        <select name="category" class="search-scope" title="Limit to a category">
+          <option value="">All documents</option>
+          {% for c in categories %}
+            <option value="{{ c.slug }}" {% if c.slug == category_slug %}selected{% endif %}>
+              {{ c.name }}
+            </option>
+          {% endfor %}
+        </select>
+        <button class="btn primary" type="submit">Search</button>
+      </div>
+    </form>
+
+    {% if q %}
+      <p class="muted">
+        {% if selected_category %}
+          Searching inside <strong>{{ selected_category.name }}</strong>
+          (<code>data/{{ selected_category.slug }}/</code>).
+          <a href="{{ url_for('search', q=q) }}">Search everywhere instead.</a>
+        {% else %}
+          Searching all documents.
+        {% endif %}
+      </p>
+      {% if results %}
+        <p class="muted">{{ results|length }} result{{ '' if results|length == 1 else 's' }} for “{{ q }}”.</p>
+        <ul class="results">
+          {% for r in results %}
+            <li>
+              <a class="result-title" href="{{ url_for('view', path=r.rel) }}">{{ r.title }}</a>
+              <div class="result-rel muted">{{ r.rel }}</div>
+              <div class="result-snippet">{{ r.snippet }}</div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No matches for “{{ q }}”{% if selected_category %} in {{ selected_category.name }}{% endif %}.</p>
+      {% endif %}
+    {% endif %}
+  </article>
+{% endblock %}

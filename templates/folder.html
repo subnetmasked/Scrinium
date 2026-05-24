@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}
+  {%- if is_category -%}{{ category.name }}
+  {%- elif is_entry -%}{{ title }}
+  {%- else -%}{{ title }}/
+  {%- endif %} — {{ site_name }}
+{% endblock %}
+{% block content %}
+  <div class="doc-header">
+    <nav class="crumbs">
+      {% if is_category or is_entry %}
+        <span class="muted small chip">{{ category.name }}</span>
+      {% endif %}
+      {% for c in crumbs %}
+        {% if c.is_leaf %}
+          <span>{{ c.name }}{% if not is_entry %}/{% endif %}</span>
+        {% else %}
+          <a class="muted" href="{{ url_for('folder', path=c.rel) }}">{{ c.name }}</a>
+          <span class="sep">/</span>
+        {% endif %}
+      {% endfor %}
+    </nav>
+    <div class="doc-actions">
+      {% if is_category %}
+        <a class="btn primary" href="{{ url_for('entry_new', slug=category.slug) }}">+ Add {{ category.noun }}</a>
+      {% elif is_entry %}
+        <a class="btn primary" href="{{ url_for('new', folder=rel) }}">+ Add doc</a>
+        {% if overview_rel %}
+          <a class="btn" href="{{ url_for('edit', path=overview_rel) }}">Edit overview</a>
+        {% endif %}
+        <form action="{{ url_for('delete', path=rel) }}" method="post"
+              onsubmit="return confirm('Delete {{ title }} and all its documents?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn danger" type="submit">Delete {{ category.noun }}</button>
+        </form>
+      {% else %}
+        <a class="btn" href="{{ url_for('new', folder=rel) }}">+ New here</a>
+        <form action="{{ url_for('delete', path=rel) }}" method="post"
+              onsubmit="return confirm('Delete this folder and EVERYTHING in it?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn danger" type="submit">Delete folder</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <article class="doc-body">
+    {% if is_category %}
+      <h1 class="page-heading">
+        <span class="cat-icon-lg">{{ category_icon(category.icon) | safe }}</span>
+        {{ category.name }}
+        <a class="search-cat-link" href="{{ url_for('search', category=category.slug) }}"
+           title="Search inside {{ category.name }}">Search {{ category.name }} →</a>
+      </h1>
+      {% if category.description %}<p class="muted lead">{{ category.description }}</p>{% endif %}
+
+      {% if category_entries %}
+        <ul class="entry-grid">
+          {% for e in category_entries %}
+            <li>
+              <a href="{{ url_for('folder', path=e.rel) }}" class="entry-card">
+                <div class="entry-card-head">
+                  <span class="entry-card-name">{{ e.name }}</span>
+                  <span class="entry-card-count muted">{{ e.doc_count }} doc{{ '' if e.doc_count == 1 else 's' }}</span>
+                </div>
+                {% if e.tags %}
+                  <div class="entry-card-tags">
+                    {% for t in e.tags %}
+                      <span class="tag-chip">{{ t }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if children.docs %}
+        <h2 class="section-heading">Standalone documents</h2>
+        <ul class="folder-listing">
+          {% for d in children.docs %}
+            <li>
+              <a href="{{ url_for('view', path=d.rel) }}" class="doc-link">
+                <span class="icon">·</span> {{ d.name }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if not children.folders and not children.docs %}
+        <p class="muted">
+          No {{ category.noun }}s yet.
+          <a href="{{ url_for('entry_new', slug=category.slug) }}">Add the first one.</a>
+        </p>
+      {% endif %}
+
+    {% elif is_entry %}
+      {% if entry_tags %}
+        <div class="entry-tags-row">
+          {% for t in entry_tags %}
+            <a class="tag-chip lg" href="{{ url_for('tag_page', tag=t) }}">{{ t }}</a>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if overview_html %}
+        <section class="entry-overview">
+          {{ overview_html | safe }}
+        </section>
+      {% else %}
+        <h1>{{ title }}</h1>
+        <p class="muted">
+          No overview yet.
+          <a href="{{ url_for('new') }}?path={{ rel }}/overview&amp;kind=doc">Add an overview.md</a>
+          to summarise this {{ category.noun }}.
+        </p>
+      {% endif %}
+
+      {% if children.folders or children.docs %}
+        <h2 class="section-heading">Documents</h2>
+        <ul class="folder-listing">
+          {% for f in children.folders %}
+            <li>
+              <a href="{{ url_for('folder', path=f.rel) }}" class="folder-link">
+                <span class="icon">▸</span> {{ f.name }}/
+              </a>
+            </li>
+          {% endfor %}
+          {% for d in children.docs %}
+            <li>
+              <a href="{{ url_for('view', path=d.rel) }}" class="doc-link">
+                <span class="icon">·</span> {{ d.name }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        {% if overview_html %}
+          <p class="muted">No additional documents yet.
+            <a href="{{ url_for('new', folder=rel) }}">Add one.</a>
+          </p>
+        {% endif %}
+      {% endif %}
+
+    {% else %}
+      {% if children.folders or children.docs %}
+        <ul class="folder-listing">
+          {% for f in children.folders %}
+            <li>
+              <a href="{{ url_for('folder', path=f.rel) }}" class="folder-link">
+                <span class="icon">▸</span> {{ f.name }}/
+              </a>
+            </li>
+          {% endfor %}
+          {% for d in children.docs %}
+            <li>
+              <a href="{{ url_for('view', path=d.rel) }}" class="doc-link">
+                <span class="icon">·</span> {{ d.name }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">This folder is empty.
+          <a href="{{ url_for('new', folder=rel) }}">Add a document.</a>
+        </p>
+      {% endif %}
+    {% endif %}
+  </article>
+{% endblock %}

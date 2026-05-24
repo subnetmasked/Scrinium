@@ -1,0 +1,14 @@
+services:
+  scrinium:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: scrinium:latest
+    container_name: scrinium
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SCRINIUM_SITE_NAME: Scrinium
+    volumes:
+      - ./data:/data:Z
