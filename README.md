@@ -170,6 +170,166 @@ pip install -r requirements.txt
 SCRINIUM_DATA=./data python app.py
 ```
 
+## Deploying on a Fedora VM (from GitHub)
+
+End-to-end walkthrough for cloning Scrinium from GitHub onto a fresh
+Fedora VM (Server or Workstation, F39+) and running it as a rootless
+Podman service that survives reboots.
+
+### 1. Provision the VM
+
+Any modern Fedora release works. 1 vCPU, 1 GB RAM, 8 GB disk is plenty
+for hundreds of documents. The VM needs outbound internet for `dnf`
+and the initial `git clone`.
+
+### 2. Install the runtime
+
+```bash
+sudo dnf install -y git podman podman-compose
+```
+
+Quick sanity check:
+
+```bash
+podman --version          # 4.x or newer
+podman-compose --version
+```
+
+> If `podman-compose` isn't packaged on your release, fall back to
+> `pip install --user podman-compose`.
+
+### 3. Use a regular (non-root) account
+
+Rootless Podman is the recommended mode. Pick or create a normal user
+and enable `systemd-logind` lingering so its services keep running
+after logout:
+
+```bash
+sudo useradd -m scrinium             # or reuse your own account
+sudo loginctl enable-linger scrinium
+sudo machinectl shell scrinium@      # or: su - scrinium
+```
+
+### 4. Clone from GitHub
+
+```bash
+git clone https://github.com/<your-account>/Scrinium.git ~/scrinium
+cd ~/scrinium
+mkdir -p data
+```
+
+(`data/` is gitignored — it's where the live documentation, auth DB,
+session secret, and `categories.json` will be written.)
+
+### 5. (Optional) tune `compose.yaml` for production
+
+If Scrinium will sit behind a reverse proxy with TLS, add a couple of
+environment variables under the `scrinium` service:
+
+```yaml
+environment:
+  SCRINIUM_SITE_NAME: "Work Docs"
+  SCRINIUM_HTTPS_ONLY: "1"
+  SCRINIUM_TRUST_PROXY: "1"
+```
+
+For a strictly internal VM accessed by IP, leave the defaults alone.
+
+### 6. Build and start
+
+```bash
+podman-compose up -d --build
+curl -s http://127.0.0.1:8080/health
+# expect: {"data":"/data","ok":true,"version":"0.5.0"}
+```
+
+### 7. Open the firewall
+
+```bash
+sudo firewall-cmd --permanent --add-port=8080/tcp
+sudo firewall-cmd --reload
+```
+
+(Skip this if you're running a reverse proxy on the same VM and only
+plan to expose `:443`.)
+
+Browse to `http://<vm-ip>:8080` — the first request redirects to
+`/setup` so you can create the admin account.
+
+### 8. Make it survive reboots (systemd)
+
+Generate a rootless systemd unit so Scrinium starts on boot without
+having to log in:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cd ~/scrinium
+podman generate systemd --new --name scrinium \
+    --files --restart-policy=always
+mv container-scrinium.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now container-scrinium.service
+systemctl --user status container-scrinium
+```
+
+Reboot once and verify the service comes back up on its own.
+
+### 9. Updating from GitHub
+
+Whenever you push new code from your dev machine:
+
+```bash
+cd ~/scrinium
+git pull
+podman-compose up -d --build
+```
+
+If a build picks up stale layers (rare, but happens):
+
+```bash
+podman-compose down
+podman-compose build --no-cache scrinium
+podman-compose up -d --force-recreate
+```
+
+The CSS link is cache-busted by `APP_VERSION` so users get the new
+styles on their next page load — no hard refresh needed.
+
+### 10. Back up what matters
+
+`~/scrinium/data/` is the entire state of the install. A daily tarball
+is plenty for most setups:
+
+```bash
+tar -czf /var/backups/scrinium-$(date +%F).tgz -C ~/scrinium data
+```
+
+Combine with `vzdump` (Proxmox) or your usual VM-snapshot policy for
+belt-and-braces protection.
+
+### 11. (Optional) reverse proxy with TLS
+
+Caddy is the shortest path on Fedora and handles certificates for you:
+
+```bash
+sudo dnf install -y caddy
+sudo systemctl enable --now caddy
+```
+
+`/etc/caddy/Caddyfile`:
+
+```caddy
+docs.example.com {
+    reverse_proxy 127.0.0.1:8080
+    encode zstd gzip
+}
+```
+
+`sudo systemctl reload caddy` and you're done — Let's Encrypt is
+provisioned automatically. Make sure step 5's
+`SCRINIUM_HTTPS_ONLY=1` and `SCRINIUM_TRUST_PROXY=1` are set so
+cookies and client IPs work right behind the proxy.
+
 ## Layout
 
 ```
