@@ -350,7 +350,8 @@ def ldap_authenticate(username: str, password: str) -> Optional[dict]:
         if not bound:
             return None
         return {"username": username, "dn": user_dn}
-    except LDAPException:
+    except LDAPException as e:
+        current_app.logger.error("LDAP authentication error: %s", e)
         return None
     except Exception:
         current_app.logger.exception("LDAP authentication error")
