@@ -328,26 +328,41 @@ def ldap_authenticate(username: str, password: str) -> Optional[dict]:
         if settings.get("use_starttls"):
             conn.open()
             if not conn.start_tls():
+                current_app.logger.error("LDAP: service-account START_TLS failed")
                 return None
         if not conn.bind():
+            current_app.logger.error(
+                "LDAP: service-account bind failed (result: %s)", conn.result
+            )
             return None
         flt = settings.get("user_filter") or "(uid={username})"
         flt = flt.replace("{username}", _ldap_escape(username))
+        current_app.logger.debug("LDAP: searching base=%r filter=%r", settings.get("user_base_dn"), flt)
         conn.search(settings.get("user_base_dn") or "", flt, attributes=["cn"])
         if not conn.entries:
+            current_app.logger.error(
+                "LDAP: user %r not found (base=%r filter=%r)",
+                username, settings.get("user_base_dn"), flt,
+            )
             conn.unbind()
             return None
         user_dn = conn.entries[0].entry_dn
+        current_app.logger.debug("LDAP: found user DN %r, attempting user bind", user_dn)
         conn.unbind()
 
         user_conn = Connection(server, user_dn, password, auto_bind=False)
         if user_conn.open() is False:
+            current_app.logger.error("LDAP: failed to open connection for user DN %r", user_dn)
             return None
         if settings.get("use_starttls") and not user_conn.start_tls():
+            current_app.logger.error("LDAP: user START_TLS failed for DN %r", user_dn)
             return None
         bound = user_conn.bind()
         user_conn.unbind()
         if not bound:
+            current_app.logger.error(
+                "LDAP: user bind failed for DN %r (result: %s)", user_dn, user_conn.result
+            )
             return None
         return {"username": username, "dn": user_dn}
     except LDAPException as e:
