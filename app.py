@@ -1,9 +1,11 @@
 """Scrinium - a small, markdown-native IT documentation app."""
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import shutil
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -62,6 +64,13 @@ def _load_secret_key() -> bytes:
         pass
     return key
 
+
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
 
 app = Flask(__name__)
 app.config.update(
