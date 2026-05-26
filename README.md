@@ -328,6 +328,23 @@ the nginx container expects:
 - `${SCRINIUM_TLS_HOST_DIR}/fullchain.pem`
 - `${SCRINIUM_TLS_HOST_DIR}/privkey.pem`
 
+By default, the compose file publishes nginx on `8080` and `8443` because
+rootless Podman cannot bind host ports below 1024 on a stock Linux host.
+For a production hostname on normal HTTPS (`https://docs.example.com/`),
+either:
+
+- allow rootless low-port binds once on the host, then set
+  `SCRINIUM_HTTP_PORT=80` and `SCRINIUM_HTTPS_PORT=443` in `.env`:
+
+  ```bash
+  echo 'net.ipv4.ip_unprivileged_port_start=80' |
+    sudo tee /etc/sysctl.d/99-rootless-low-ports.conf
+  sudo sysctl --system
+  ```
+
+- or keep Scrinium on `8080`/`8443` and put an existing privileged host
+  reverse proxy/firewall rule in front of it.
+
 Three common sources:
 
 - **Existing wildcard cert** — set `SCRINIUM_TLS_HOST_DIR` to wherever
