@@ -16,7 +16,8 @@ Plain `.md` files on disk — no database for content, no lock-in.
 
 [Quick start](#first-run) ·
 [Configuration](#configuration) ·
-[Dashboard](#the-dashboard) ·
+[Home dashboard](#the-dashboard) ·
+[Links dashboard](#the-links-dashboard) ·
 [Fedora deploy](#deploying-on-a-fedora-vm-from-github) ·
 [License](#license)
 
@@ -46,6 +47,7 @@ Plain `.md` files on disk — no database for content, no lock-in.
 - [Configuration](#configuration)
 - [Admin panel](#admin-panel)
 - [The dashboard](#the-dashboard)
+- [The links dashboard](#the-links-dashboard)
 - [How docs are organised](#how-docs-are-organised)
   - [Tags](#tags)
   - [Search](#search)
@@ -137,6 +139,64 @@ When signed in as an admin, the topbar shows an **Admin** link.
 > [!TIP]
 > Click any tag chip anywhere in the app to jump to `/t/<tag>` — a
 > listing of every entry tagged with it.
+
+---
+
+## The links dashboard
+
+`/dash` is a separate, shared dashboard for the kind of links that
+always end up scattered across personal bookmark bars — monitoring
+UIs, ticketing, hardware/iLO consoles, vendor portals, runbooks,
+status pages. Everyone signed in sees the same grid, and any
+signed-in user can curate it. There is **no admin-only gate** on
+purpose: the goal is to replace `~/bookmarks.html` for the whole team
+once it gets messy.
+
+What you get:
+
+- **Cards in free-form sections.** Each link has a title, URL, optional
+  description, and an optional section heading. Cards with no section
+  collect under a leading **Pinned** group. The section input is an
+  autocomplete of existing sections so the team converges on the same
+  names rather than ending up with *Monitoring* and *monitoring* side
+  by side.
+- **Auto-fetched favicons.** When a link is created (or its URL is
+  changed) Scrinium parses `<link rel="icon">` from the target page
+  and falls back to `/favicon.ico`. Successful fetches are cached on
+  disk under `${SCRINIUM_CONFIG}/favicons/`. Each fetch is capped at
+  4 s and 256 KB and uses the `ScriniumFaviconFetcher/1.0` User-Agent.
+- **Letter-tile fallback.** When fetching fails (offline host, private
+  IP, MIME mismatch, weird redirects) Scrinium renders a deterministic
+  two-letter SVG tile based on the title so the grid stays tidy.
+- **Manual icon refresh.** The *Icon* button on each card re-fetches
+  the favicon — handy once a service finally gets around to setting
+  one, or after a vendor rebrand.
+- **Link to a doc.** Each card can optionally point at a markdown path
+  inside `data/` (e.g. `servers/web-01/runbook.md`). The doc page —
+  and the parent entry/folder — then surfaces the matching links under
+  a *Related links* heading, so a server entry can show its iLO URL,
+  its Grafana board, and its on-call runbook side by side with the
+  prose.
+- **Live filter.** A search box at the top of `/dash` filters cards by
+  title, URL, description, section, and linked doc path entirely in
+  the browser — no round-trip.
+
+Validation rules (enforced server-side, see `links.py`):
+
+| Field         | Constraint                                                                                |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| `title`       | 1–120 characters, required                                                                |
+| `url`         | `http://` or `https://`, host required; bare `host.tld` is auto-prefixed with `https://`  |
+| `description` | up to 280 characters, optional                                                            |
+| `section`     | up to 60 characters, optional                                                             |
+| `doc_path`    | optional; must resolve to an existing file under `data/`                                  |
+
+> [!NOTE]
+> Links live in the `dashboard_links` table inside the same SQLite
+> database as auth (`data/.scrinium/auth.db`), so the existing `data/`
+> backup story already covers them. Cached favicons live in
+> `data/.scrinium/favicons/` and are safe to delete — they will be
+> re-fetched on next view (or fall back to letter tiles).
 
 ---
 
