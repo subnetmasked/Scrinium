@@ -263,12 +263,14 @@ def login():
         password = request.form.get("password", "")
         rate_key = auth.login_rate_key(username_value)
         remaining = auth.lockout_remaining(rate_key)
+        print(f"[DEBUG] login POST user={username_value!r} locked_out={remaining>0}", flush=True)
         if remaining > 0:
             error = (
                 f"Too many failed attempts. Try again in {remaining} seconds."
             )
         else:
             user = auth.authenticate(username_value, password)
+            print(f"[DEBUG] authenticate result={user is not None}", flush=True)
             if user is None:
                 auth.record_failure(rate_key)
                 error = "Invalid username or password."
