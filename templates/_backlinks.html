@@ -1,0 +1,14 @@
+{% if backlinks %}
+<section class="backlinks-card">
+  <h2 class="section-heading">Backlinks ({{ backlinks | length }})</h2>
+  <ul class="backlinks-list">
+    {% for bl in backlinks %}
+      <li class="backlinks-item">
+        <a href="{{ url_for('view', path=bl.source_rel) }}">{{ bl.source_rel.rsplit('/', 1)[-1] }}</a>
+        <span class="muted backlinks-path">{{ bl.source_rel }}</span>
+        <p class="backlinks-snippet muted">{{ bl.snippet }}</p>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

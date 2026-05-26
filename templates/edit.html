@@ -14,6 +14,11 @@
       <span class="muted">· editing</span>
     </nav>
     <div class="doc-actions">
+      <button class="btn" type="button" id="insert-fm"
+              title="Insert YAML frontmatter at the top of the document"
+              {% if has_frontmatter %}hidden{% endif %}>+ Metadata</button>
+      <button class="btn" type="button" id="pick-image">+ Image</button>
+      <input type="file" id="image-input" accept="image/*" multiple hidden>
       <button class="btn" type="button" id="toggle-preview">Preview</button>
       <button class="btn primary" form="edit-form" type="submit">Save</button>
       <a class="btn" href="{{ url_for('view', path=rel) }}">Cancel</a>
@@ -27,5 +32,10 @@
 
   <article id="preview" class="doc-body preview hidden"></article>
 
-  <script src="{{ url_for('static', filename='editor.js') }}"></script>
+  <template id="fm-template-data">{{ fm_template }}</template>
+
+  <script>
+    window.SCRINIUM_DOC_REL = {{ rel | tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='editor.js') }}?v={{ app_version }}"></script>
 {% endblock %}

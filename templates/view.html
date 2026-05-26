@@ -24,7 +24,15 @@
 
   {% include "_related_links.html" %}
 
-  <article class="doc-body">
-    {{ html | safe }}
-  </article>
+  <div class="doc-with-infobox">
+    <div class="doc-main">
+      <article class="doc-body">
+        {{ html | safe }}
+      </article>
+      {% include "_backlinks.html" %}
+    </div>
+    {% with fm=fm, fm_rows=fm_rows, title=title, rel=rel %}
+      {% include "_infobox.html" %}
+    {% endwith %}
+  </div>
 {% endblock %}

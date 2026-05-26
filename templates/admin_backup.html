@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Backup — Admin — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="admin-tabs">
+    <a class="tab" href="{{ url_for('admin_users') }}">Users</a>
+    <a class="tab" href="{{ url_for('admin_categories') }}">Categories</a>
+    <a class="tab" href="{{ url_for('admin_ldap') }}">LDAP</a>
+    <a class="tab active" href="{{ url_for('admin_backup') }}">Backup</a>
+  </div>
+
+  <article class="doc-body">
+    <h2>Download a content backup</h2>
+    <p class="muted">
+      Snapshots every markdown file and image attachment under
+      <code>{{ data_dir }}</code> into a single zip you can save somewhere safe.
+    </p>
+
+    <dl class="backup-stats">
+      <div><dt>Markdown files</dt><dd>{{ md_count }}</dd></div>
+      <div><dt>Attachments</dt><dd>{{ attach_count }}</dd></div>
+      <div><dt>Total</dt><dd>{{ total_files }} file{{ '' if total_files == 1 else 's' }}, {{ total_human }}</dd></div>
+    </dl>
+
+    <form method="post" action="{{ url_for('admin_backup') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-actions">
+        <button class="btn primary" type="submit"
+                {% if total_files == 0 %}disabled{% endif %}>
+          Download zip
+        </button>
+      </div>
+    </form>
+
+    <h3 class="mt-2">What's included</h3>
+    <ul>
+      <li>Every <code>.md</code> file in the data directory, with the original folder layout.</li>
+      <li>Every attachment under <code>_attachments/</code> (pasted images, drag-and-drop uploads).</li>
+      <li>A <code>BACKUP_README.txt</code> manifest with timestamp, version and file counts.</li>
+    </ul>
+
+    <h3>What's NOT included</h3>
+    <ul>
+      <li>Admin config in <code>.scrinium/</code> — user accounts (<code>auth.db</code>), the Flask session-signing key (<code>secret.key</code>), and category definitions (<code>categories.json</code>).</li>
+      <li>Hidden dotfiles anywhere in the data tree.</li>
+    </ul>
+    <p class="muted small">
+      For full disaster recovery, also snapshot the <code>.scrinium</code> directory
+      (or the entire data volume) outside of Scrinium — those files contain
+      secrets and shouldn't be downloaded through the web UI.
+    </p>
+  </article>
+{% endblock %}

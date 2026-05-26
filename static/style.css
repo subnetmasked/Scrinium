@@ -64,8 +64,9 @@ input:focus, select:focus, textarea:focus {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.6rem 1rem;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 0.55rem 1rem;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -73,18 +74,73 @@ input:focus, select:focus, textarea:focus {
   z-index: 10;
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   font-weight: 600;
   font-size: 1.05rem;
   color: var(--text);
   letter-spacing: 0.2px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 .brand:hover { text-decoration: none; color: var(--accent); }
+.brand:hover .brand-name { color: var(--accent); }
 
-.topbar .search { flex: 1; max-width: 520px; }
+.brand-logo {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  flex-shrink: 0;
+}
+
+.brand-name {
+  transition: color 0.12s ease;
+}
+
+.topbar .search {
+  flex: 1 1 auto;
+  max-width: 520px;
+  min-width: 0;
+}
 .topbar .search input { width: 100%; }
 
-.actions { display: flex; gap: 0.5rem; }
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .topbar-left {
+    width: 100%;
+    order: 1;
+  }
+  .actions {
+    width: 100%;
+    order: 2;
+  }
+  .brand-name {
+    display: none;
+  }
+}
 
 /* ------- buttons ------- */
 
@@ -531,17 +587,25 @@ input:focus, select:focus, textarea:focus {
 .entry-card-name { font-weight: 600; }
 .entry-card-meta { font-size: 0.8rem; margin-top: 0.25rem; }
 
-/* ------- entry overview banner ------- */
+/* ------- entry overview ------- */
 
+/* Renders inline with the page like any other document. The entry's
+   metadata lives in the infobox; the overview body keeps the plain
+   .doc-body look so it doesn't read as a separate card. */
 .entry-overview {
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  padding: 0.25rem 1.25rem 0.5rem;
-  margin: 0.5rem 0 1rem;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
 }
-.entry-overview > :first-child { margin-top: 0.9rem; }
+.entry-overview > :first-child { margin-top: 0; }
+
+.entry-children {
+  margin-top: 2rem;
+}
+.entry-children-empty {
+  margin-top: 1.5rem;
+}
 
 /* ------- crumbs chip ------- */
 
@@ -1378,3 +1442,194 @@ body.centered .site-footer {
 .codehilite .gh, .codehilite .gu { color: #79c0ff; font-weight: bold; }
 .codehilite .gs { font-weight: bold; }
 .codehilite .ge { font-style: italic; }
+
+/* ------- doc infobox + backlinks + wikilinks ------- */
+
+.doc-with-infobox {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  gap: 1.75rem;
+  align-items: start;
+}
+
+.doc-main {
+  min-width: 0;
+}
+
+.infobox {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bg-elev) 92%, transparent),
+    var(--bg-elev));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem 0.9rem;
+  position: sticky;
+  top: 4.5rem;
+  max-height: calc(100vh - 5.5rem);
+  overflow: auto;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset,
+              0 8px 24px -16px rgba(0, 0, 0, 0.5);
+}
+
+.infobox > details {
+  margin: 0;
+}
+
+.infobox-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin: -0.15rem -0.25rem 0.55rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: var(--radius-sm);
+  user-select: none;
+}
+
+.infobox-summary:hover {
+  background: color-mix(in srgb, var(--bg-elev-2, var(--border)) 50%, transparent);
+}
+
+.infobox-summary::-webkit-details-marker { display: none; }
+.infobox-summary::marker { content: ""; }
+
+.infobox-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infobox-chevron::before {
+  content: "▸";
+  color: var(--text-muted);
+  transition: transform 0.18s ease;
+  display: inline-block;
+  font-size: 0.85em;
+}
+
+details[open] > .infobox-summary .infobox-chevron::before {
+  transform: rotate(90deg);
+}
+
+.infobox-rows {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  column-gap: 0.75rem;
+  row-gap: 0.4rem;
+  align-items: baseline;
+}
+
+.infobox-rows dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0;
+  font-weight: 500;
+}
+
+.infobox-rows dd {
+  margin: 0;
+  font-size: 0.88rem;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.infobox-rows .tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.infobox-code {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.78rem;
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radius-sm);
+}
+
+.backlinks-card {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.backlinks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.backlinks-item a {
+  font-weight: 600;
+}
+
+.backlinks-path {
+  display: block;
+  font-size: 0.82rem;
+}
+
+.backlinks-snippet {
+  margin: 0.25rem 0 0;
+  font-size: 0.88rem;
+}
+
+.wiki-link { font-weight: 500; }
+.wiki-broken { color: var(--danger); }
+.wiki-ambiguous { border-bottom: 1px dotted var(--text-muted); }
+
+.doc-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+/* ------- admin: backup ------- */
+
+.backup-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 1.25rem;
+}
+.backup-stats > div {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+}
+.backup-stats dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 0.2rem;
+}
+.backup-stats dd {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .doc-with-infobox {
+    grid-template-columns: 1fr;
+  }
+  .infobox {
+    order: -1;
+    position: static;
+    max-height: none;
+  }
+}
+

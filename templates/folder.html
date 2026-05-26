@@ -46,8 +46,8 @@
 
   {% include "_related_links.html" %}
 
-  <article class="doc-body">
-    {% if is_category %}
+  {% if is_category %}
+    <article class="doc-body">
       <h1 class="page-heading">
         <span class="cat-icon-lg">{{ category_icon(category.icon) | safe }}</span>
         {{ category.name }}
@@ -97,55 +97,97 @@
           <a href="{{ url_for('entry_new', slug=category.slug) }}">Add the first one.</a>
         </p>
       {% endif %}
+    </article>
 
-    {% elif is_entry %}
-      {% if entry_tags %}
-        <div class="entry-tags-row">
-          {% for t in entry_tags %}
-            <a class="tag-chip lg" href="{{ url_for('tag_page', tag=t) }}">{{ t }}</a>
-          {% endfor %}
+  {% elif is_entry %}
+    {% if overview_html %}
+      <div class="doc-with-infobox">
+        <div class="doc-main">
+          {% if entry_tags %}
+            <div class="entry-tags-row">
+              {% for t in entry_tags %}
+                <a class="tag-chip lg" href="{{ url_for('tag_page', tag=t) }}">{{ t }}</a>
+              {% endfor %}
+            </div>
+          {% endif %}
+          <article class="doc-body entry-overview">
+            {{ overview_html | safe }}
+          </article>
+
+          {% if children.folders or children.docs %}
+            <section class="entry-children">
+              <h2 class="section-heading">Documents</h2>
+              <ul class="folder-listing">
+                {% for f in children.folders %}
+                  <li>
+                    <a href="{{ url_for('folder', path=f.rel) }}" class="folder-link">
+                      <span class="icon">▸</span> {{ f.name }}/
+                    </a>
+                  </li>
+                {% endfor %}
+                {% for d in children.docs %}
+                  <li>
+                    <a href="{{ url_for('view', path=d.rel) }}" class="doc-link">
+                      <span class="icon">·</span> {{ d.name }}
+                    </a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </section>
+          {% else %}
+            <p class="muted entry-children-empty">
+              No additional documents yet.
+              <a href="{{ url_for('new', folder=rel) }}">Add one.</a>
+            </p>
+          {% endif %}
+
+          {% with backlinks=overview_backlinks %}
+            {% include "_backlinks.html" %}
+          {% endwith %}
         </div>
-      {% endif %}
-      {% if overview_html %}
-        <section class="entry-overview">
-          {{ overview_html | safe }}
-        </section>
-      {% else %}
+        {% with fm=overview_fm, fm_rows=overview_fm_rows, title=title, rel=overview_rel %}
+          {% include "_infobox.html" %}
+        {% endwith %}
+      </div>
+    {% else %}
+      <article class="doc-body">
+        {% if entry_tags %}
+          <div class="entry-tags-row">
+            {% for t in entry_tags %}
+              <a class="tag-chip lg" href="{{ url_for('tag_page', tag=t) }}">{{ t }}</a>
+            {% endfor %}
+          </div>
+        {% endif %}
         <h1>{{ title }}</h1>
         <p class="muted">
           No overview yet.
           <a href="{{ url_for('new') }}?path={{ rel }}/overview&amp;kind=doc">Add an overview.md</a>
           to summarise this {{ category.noun }}.
         </p>
-      {% endif %}
-
-      {% if children.folders or children.docs %}
-        <h2 class="section-heading">Documents</h2>
-        <ul class="folder-listing">
-          {% for f in children.folders %}
-            <li>
-              <a href="{{ url_for('folder', path=f.rel) }}" class="folder-link">
-                <span class="icon">▸</span> {{ f.name }}/
-              </a>
-            </li>
-          {% endfor %}
-          {% for d in children.docs %}
-            <li>
-              <a href="{{ url_for('view', path=d.rel) }}" class="doc-link">
-                <span class="icon">·</span> {{ d.name }}
-              </a>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        {% if overview_html %}
-          <p class="muted">No additional documents yet.
-            <a href="{{ url_for('new', folder=rel) }}">Add one.</a>
-          </p>
+        {% if children.folders or children.docs %}
+          <h2 class="section-heading">Documents</h2>
+          <ul class="folder-listing">
+            {% for f in children.folders %}
+              <li>
+                <a href="{{ url_for('folder', path=f.rel) }}" class="folder-link">
+                  <span class="icon">▸</span> {{ f.name }}/
+                </a>
+              </li>
+            {% endfor %}
+            {% for d in children.docs %}
+              <li>
+                <a href="{{ url_for('view', path=d.rel) }}" class="doc-link">
+                  <span class="icon">·</span> {{ d.name }}
+                </a>
+              </li>
+            {% endfor %}
+          </ul>
         {% endif %}
-      {% endif %}
+      </article>
+    {% endif %}
 
-    {% else %}
+  {% else %}
+    <article class="doc-body">
       {% if children.folders or children.docs %}
         <ul class="folder-listing">
           {% for f in children.folders %}
@@ -168,6 +210,6 @@
           <a href="{{ url_for('new', folder=rel) }}">Add a document.</a>
         </p>
       {% endif %}
-    {% endif %}
-  </article>
+    </article>
+  {% endif %}
 {% endblock %}

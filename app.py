@@ -2,19 +2,26 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
+import re
 import secrets
 import shutil
 import sys
-from datetime import timedelta
+import tempfile
+import zipfile
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+from urllib.parse import quote
 
 import markdown
 from flask import (
     Flask,
     Response,
     abort,
+    after_this_request,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -24,9 +31,13 @@ from flask import (
 )
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.utils import secure_filename
 
 import auth
+import backlinks
+import frontmatter
 import links
+import markdown_ext
 import nav
 
 
@@ -44,7 +55,8 @@ PORT = int(os.environ.get("SCRINIUM_PORT", "8080"))
 SITE_NAME = os.environ.get("SCRINIUM_SITE_NAME", "Scrinium")
 HTTPS_ONLY = os.environ.get("SCRINIUM_HTTPS_ONLY", "0") == "1"
 TRUST_PROXY = os.environ.get("SCRINIUM_TRUST_PROXY", "0") == "1"
-APP_VERSION = "0.6.0"
+MAX_UPLOAD_MB = int(os.environ.get("SCRINIUM_MAX_UPLOAD_MB", "8"))
+APP_VERSION = "0.9.2"
 PROJECT_URL = "https://github.com/subnetmasked/Scrinium"
 AUTHOR_NAME = "subnetmasked"
 AUTHOR_URL = "https://github.com/subnetmasked"
@@ -89,7 +101,8 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=HTTPS_ONLY,
     PERMANENT_SESSION_LIFETIME=timedelta(days=14),
-    MAX_CONTENT_LENGTH=8 * 1024 * 1024,
+    MAX_CONTENT_LENGTH=MAX_UPLOAD_MB * 1024 * 1024,
+    MAX_UPLOAD_MB=MAX_UPLOAD_MB,
 )
 
 if TRUST_PROXY:
@@ -111,6 +124,7 @@ md_renderer = markdown.Markdown(
         "footnotes",
         "attr_list",
         "def_list",
+        "markdown_ext",
     ],
     extension_configs={
         "codehilite": {"guess_lang": False, "css_class": "codehilite"},
@@ -192,7 +206,7 @@ def all_doc_paths() -> list[str]:
             rel_parts = p.relative_to(DATA_DIR).parts
         except ValueError:
             continue
-        if any(part.startswith(".") for part in rel_parts):
+        if any(nav.is_hidden_entry(part) for part in rel_parts):
             continue
         if not rel_parts:
             continue
@@ -201,6 +215,109 @@ def all_doc_paths() -> list[str]:
         elif p.is_file() and p.suffix == MD_EXT:
             paths.add("/".join(rel_parts)[: -len(MD_EXT)])
     return sorted(paths, key=str.lower)
+
+
+_ALLOWED_IMAGE_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+
+
+def attachment_rel_for(doc_rel_path: str, filename: str) -> str:
+    parts = [p for p in doc_rel_path.split("/") if p]
+    if len(parts) == 1:
+        return f"_attachments/{parts[0]}/{filename}"
+    parent = "/".join(parts[:-1])
+    stem = parts[-1]
+    return f"{parent}/_attachments/{stem}/{filename}"
+
+
+def attachment_dir_for(doc_rel_path: str) -> Path:
+    rel = attachment_rel_for(doc_rel_path, "x").rsplit("/", 1)[0]
+    return safe_join(rel)
+
+
+def _sniff_image(data: bytes) -> tuple[str, str] | None:
+    if len(data) < 12:
+        return None
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png", ".png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg", ".jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif", ".gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    return None
+
+
+def _unique_filename(directory: Path, stem: str, ext: str) -> str:
+    base = stem or "image"
+    candidate = f"{base}{ext}"
+    n = 2
+    while (directory / candidate).exists():
+        candidate = f"{base}-{n}{ext}"
+        n += 1
+    return candidate
+
+
+def _category_slugs() -> list[str]:
+    return [c["slug"] for c in categories()]
+
+
+def _default_new_doc_content(
+    title: str,
+    *,
+    tags: list[str] | None = None,
+    category: str | None = None,
+    rel_path: str | None = None,
+) -> str:
+    if category is None and rel_path:
+        category = frontmatter.infer_category(rel_path, _category_slugs())
+    fm = frontmatter.default_frontmatter(title, tags=tags, category=category)
+    body = f"# {title}\n\n"
+    return frontmatter.serialize(fm, body, category=category)
+
+
+def _infobox_fm(target: Path, parsed_fm: dict[str, Any], rel: str) -> dict[str, Any]:
+    """Return an infobox-ready frontmatter dict, synthesising sensible
+    defaults (title, folder path, updated) so every doc gets an infobox
+    even if the file has no explicit YAML block yet."""
+    fm: dict[str, Any] = dict(parsed_fm or {})
+    fm.setdefault("title", target.stem)
+    folder = rel.rsplit("/", 1)[0] if "/" in rel else ""
+    if folder:
+        fm.setdefault("folder", folder)
+    try:
+        mtime = target.stat().st_mtime
+        fm.setdefault(
+            "updated",
+            datetime.fromtimestamp(mtime).date().isoformat(),
+        )
+    except OSError:
+        pass
+    return fm
+
+
+def render_markdown(body: str, doc_rel_path: str) -> str:
+    paths = set(all_doc_paths())
+
+    def _attach_url(dr: str, fn: str) -> str:
+        return url_for("attachment", path=attachment_rel_for(dr, fn))
+
+    markdown_ext.set_render_context(
+        doc_rel=doc_rel_path,
+        all_paths=paths,
+        resolve_wikilink=nav.resolve_wikilink,
+        attachment_url=_attach_url,
+    )
+    try:
+        md_renderer.reset()
+        return md_renderer.convert(body)
+    finally:
+        markdown_ext.clear_render_context()
 
 
 # ---------------------------------------------------------------------------
@@ -339,10 +456,9 @@ def index():
     welcome = DATA_DIR / f"welcome{MD_EXT}"
     if welcome.is_file():
         try:
-            md_renderer.reset()
-            welcome_html = md_renderer.convert(
-                welcome.read_text(encoding="utf-8")
-            )
+            w_text = welcome.read_text(encoding="utf-8")
+            _wfm, w_body = frontmatter.parse(w_text)
+            welcome_html = render_markdown(w_body, "welcome")
         except OSError:
             welcome_html = None
     return render_template(
@@ -401,21 +517,52 @@ def _jinja_docurl(rel):
     return ""
 
 
+@app.template_filter("fm_value")
+def _jinja_fm_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, (date, datetime)):
+        if isinstance(value, datetime):
+            return value.date().isoformat()
+        return value.isoformat()
+    if isinstance(value, (list, dict)):
+        import json
+
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+@app.template_filter("is_url")
+def _jinja_is_url(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    return value.startswith("http://") or value.startswith("https://")
+
+
 @app.route("/d/<path:path>")
 def view(path: str):
     target = safe_join(path + MD_EXT)
     if not target.is_file():
         abort(404)
     text = target.read_text(encoding="utf-8")
-    md_renderer.reset()
-    html = md_renderer.convert(text)
+    fm, body = frontmatter.parse(text)
+    html = render_markdown(body, path)
+    doc_paths = set(all_doc_paths())
+    bl = backlinks.backlinks_for(DATA_DIR, doc_paths, path)
+    box_fm = _infobox_fm(target, fm, path)
+    doc_category = frontmatter.infer_category(path, _category_slugs())
     return render_template(
         "view.html",
         rel=path,
         html=html,
+        fm=box_fm,
+        fm_rows=frontmatter.fm_rows(box_fm, doc_category),
         crumbs=breadcrumbs(path),
-        title=target.stem,
+        title=str(fm.get("title") or target.stem),
         related_links=links.links_for_doc_path(path),
+        backlinks=bl,
     )
 
 
@@ -436,17 +583,28 @@ def folder(path: str):
 
     overview_html = None
     overview_rel = None
+    overview_fm: dict[str, Any] = {}
+    overview_fm_rows: list[tuple[str, Any]] = []
+    overview_backlinks: list = []
     entry_tags: list[str] = []
     category_entries: list[dict] = []
 
     if is_entry:
         overview = nav.find_overview(target)
         if overview:
-            md_renderer.reset()
-            overview_html = md_renderer.convert(
-                overview.read_text(encoding="utf-8")
-            )
             overview_rel = doc_rel(overview)
+            ov_text = overview.read_text(encoding="utf-8")
+            overview_fm_raw, ov_body = frontmatter.parse(ov_text)
+            overview_fm = _infobox_fm(overview, overview_fm_raw, overview_rel)
+            overview_category = frontmatter.infer_category(
+                overview_rel, _category_slugs()
+            )
+            overview_fm_rows = frontmatter.fm_rows(overview_fm, overview_category)
+            overview_html = render_markdown(ov_body, overview_rel)
+            doc_paths = set(all_doc_paths())
+            overview_backlinks = backlinks.backlinks_for(
+                DATA_DIR, doc_paths, overview_rel
+            )
             children["docs"] = [
                 d for d in children["docs"] if d["rel"] != overview_rel
             ]
@@ -460,7 +618,7 @@ def folder(path: str):
         except OSError:
             children_iter = []
         for child in children_iter:
-            if child.name.startswith("."):
+            if nav.is_hidden_entry(child.name):
                 continue
             if child.is_dir():
                 sub = build_tree(child)
@@ -485,6 +643,9 @@ def folder(path: str):
         is_entry=is_entry,
         overview_html=overview_html,
         overview_rel=overview_rel,
+        overview_fm=overview_fm,
+        overview_fm_rows=overview_fm_rows,
+        overview_backlinks=overview_backlinks,
         entry_tags=entry_tags,
         category_entries=category_entries,
         related_links=links.links_for_doc_prefix(path),
@@ -500,12 +661,19 @@ def edit(path: str):
         body = request.form.get("body", "")
         target.write_text(body, encoding="utf-8", newline="\n")
         return redirect(url_for("view", path=path))
+    body_text = target.read_text(encoding="utf-8")
+    doc_category = frontmatter.infer_category(path, _category_slugs())
+    fm_template = frontmatter.default_frontmatter_text(
+        target.stem, category=doc_category
+    )
     return render_template(
         "edit.html",
         rel=path,
-        body=target.read_text(encoding="utf-8"),
+        body=body_text,
         crumbs=breadcrumbs(path),
         title=target.stem,
+        fm_template=fm_template,
+        has_frontmatter=frontmatter.has_frontmatter(body_text),
     )
 
 
@@ -514,7 +682,18 @@ def new():
     error: str | None = None
     kind = request.values.get("kind", "doc")
     folder_hint = (request.values.get("folder") or "").strip().strip("/")
-    path_value = (folder_hint + "/") if folder_hint and request.method == "GET" else ""
+    name_hint = (request.values.get("name") or "").strip()
+    if request.method == "GET":
+        if name_hint and folder_hint:
+            path_value = f"{folder_hint}/{name_hint}"
+        elif name_hint:
+            path_value = name_hint
+        elif folder_hint:
+            path_value = folder_hint + "/"
+        else:
+            path_value = ""
+    else:
+        path_value = ""
 
     if request.method == "POST":
         kind = request.form.get("kind", "doc")
@@ -551,7 +730,14 @@ def new():
                 raise PathError("A folder with that name already exists at this path.")
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(f"# {leaf}\n\n", encoding="utf-8", newline="\n")
+                target.write_text(
+                    _default_new_doc_content(
+                        leaf,
+                        rel_path="/".join(segments),
+                    ),
+                    encoding="utf-8",
+                    newline="\n",
+                )
             except OSError as e:
                 raise PathError(
                     f"Could not create document. Check permissions for {DATA_DIR}."
@@ -594,23 +780,23 @@ def entry_new(slug: str):
             try:
                 entry_dir.mkdir(parents=True, exist_ok=False)
                 overview = entry_dir / "overview.md"
-                body_lines: list[str] = []
+                tag_list: list[str] = []
                 if tags_value:
-                    cleaned_tags = ", ".join(
+                    tag_list = [
                         t.strip().lstrip("#").strip()
                         for t in tags_value.replace(";", ",").split(",")
                         if t.strip()
-                    )
-                    if cleaned_tags:
-                        body_lines.append(f"tags: {cleaned_tags}")
-                        body_lines.append("")
-                body_lines.append(f"# {name_value}")
-                body_lines.append("")
+                    ]
+                content = _default_new_doc_content(
+                    name_value, tags=tag_list, category=slug
+                )
+                fm, body = frontmatter.parse(content)
                 if description_value:
-                    body_lines.append(description_value)
-                    body_lines.append("")
+                    body = body.rstrip() + "\n\n" + description_value + "\n"
                 overview.write_text(
-                    "\n".join(body_lines), encoding="utf-8", newline="\n"
+                    frontmatter.serialize(fm, body, category=slug),
+                    encoding="utf-8",
+                    newline="\n",
                 )
             except OSError as e:
                 raise PathError(
@@ -709,8 +895,87 @@ def _snippet(text: str, needle: str, width: int = 140) -> str:
 @app.route("/api/preview", methods=["POST"])
 def api_preview():
     body = request.get_data(as_text=True)
+    doc_for = (request.args.get("for") or "").strip().strip("/")
+    _fm, md_body = frontmatter.parse(body)
+    if doc_for:
+        return render_markdown(md_body, doc_for)
     md_renderer.reset()
-    return md_renderer.convert(body)
+    return md_renderer.convert(md_body)
+
+
+@app.route("/api/upload", methods=["POST"])
+@auth.login_required
+def api_upload():
+    doc_for = (request.args.get("for") or "").strip().strip("/")
+    if not doc_for:
+        abort(400, "Missing ?for=<doc_rel>")
+    target_md = safe_join(doc_for + MD_EXT)
+    if not target_md.is_file():
+        abort(404, "Document not found")
+
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        abort(400, "No file uploaded")
+
+    data = upload.read()
+    if not data:
+        abort(400, "Empty file")
+    if len(data) > app.config["MAX_CONTENT_LENGTH"]:
+        abort(413, "File too large")
+
+    sniffed = _sniff_image(data)
+    if sniffed is None:
+        abort(400, "Unsupported image type")
+    mime, ext = sniffed
+
+    dest_dir = attachment_dir_for(doc_for)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    pasted = request.form.get("pasted") == "1"
+    if pasted:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        stem = f"pasted-{stamp}"
+    else:
+        raw_name = secure_filename(upload.filename) or "image"
+        stem = Path(raw_name).stem
+        stem = re.sub(r"[^a-zA-Z0-9._-]+", "-", stem).strip("-") or "image"
+
+    filename = _unique_filename(dest_dir, stem, ext)
+    out_path = dest_dir / filename
+    out_path.write_bytes(data)
+
+    rel = attachment_rel_for(doc_for, filename)
+    return jsonify(
+        {
+            "filename": filename,
+            "rel": rel,
+            "url": url_for("attachment", path=rel),
+            "markdown": f"![]({filename})",
+        }
+    )
+
+
+@app.route("/a/<path:path>")
+@auth.login_required
+def attachment(path: str):
+    target = safe_join(path)
+    if not target.is_file():
+        abort(404)
+    if "_attachments" not in path.split("/"):
+        abort(403)
+    mime, _ = mimetypes.guess_type(str(target))
+    if not mime:
+        mime = "application/octet-stream"
+    inline = mime.startswith("image/")
+    resp = send_file(
+        target,
+        mimetype=mime,
+        max_age=86400,
+        as_attachment=not inline,
+        download_name=target.name,
+    )
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -882,6 +1147,133 @@ def dash_favicon(link_id: int):
 @auth.admin_required
 def admin_index():
     return redirect(url_for("admin_users"))
+
+
+def _backup_iter_files() -> "list[Path]":
+    """All files under DATA_DIR that belong in a content backup.
+
+    Excludes hidden dotfiles and the ``.scrinium`` config directory (which
+    holds the auth DB, signing key and category config). The result is a
+    snapshot of the user's markdown + attachments, suitable for archiving.
+    """
+    out: list[Path] = []
+    if not DATA_DIR.exists():
+        return out
+    for p in DATA_DIR.rglob("*"):
+        try:
+            rel = p.relative_to(DATA_DIR)
+        except ValueError:
+            continue
+        if any(part.startswith(".") for part in rel.parts):
+            continue
+        if not p.is_file():
+            continue
+        out.append(p)
+    return out
+
+
+def _human_bytes(n: int) -> str:
+    units = ("B", "KB", "MB", "GB", "TB")
+    size = float(n)
+    i = 0
+    while size >= 1024 and i < len(units) - 1:
+        size /= 1024.0
+        i += 1
+    if i == 0:
+        return f"{int(size)} {units[i]}"
+    return f"{size:.1f} {units[i]}"
+
+
+@app.route("/admin/backup", methods=["GET", "POST"])
+@auth.admin_required
+def admin_backup():
+    if request.method == "POST":
+        files = _backup_iter_files()
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        download_name = f"scrinium-backup-{ts}.zip"
+        root_in_zip = f"scrinium-backup-{ts}"
+        tmp = tempfile.NamedTemporaryFile(
+            prefix="scrinium-backup-", suffix=".zip", delete=False
+        )
+        tmp_path = Path(tmp.name)
+        tmp.close()
+        try:
+            with zipfile.ZipFile(
+                tmp_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True
+            ) as zf:
+                md_count = 0
+                attach_count = 0
+                for p in files:
+                    rel = p.relative_to(DATA_DIR)
+                    arcname = f"{root_in_zip}/{rel.as_posix()}"
+                    try:
+                        zf.write(p, arcname)
+                    except OSError:
+                        continue
+                    if p.suffix.lower() == ".md":
+                        md_count += 1
+                    else:
+                        attach_count += 1
+                manifest = (
+                    "Scrinium content backup\n"
+                    f"created:     {datetime.now().isoformat(timespec='seconds')}\n"
+                    f"version:     {APP_VERSION}\n"
+                    f"source:      {DATA_DIR}\n"
+                    f"markdown:    {md_count} file(s)\n"
+                    f"attachments: {attach_count} file(s)\n"
+                    "\n"
+                    "Restoring\n"
+                    "---------\n"
+                    "Unzip this archive into an empty data directory; the\n"
+                    "folder layout matches Scrinium's data volume. Admin\n"
+                    "config (categories, user accounts, session key) is NOT\n"
+                    "included and must be set up separately on the target.\n"
+                )
+                zf.writestr(f"{root_in_zip}/BACKUP_README.txt", manifest)
+        except Exception:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
+        @after_this_request
+        def _cleanup(response):
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return response
+
+        return send_file(
+            tmp_path,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=download_name,
+            max_age=0,
+        )
+
+    files = _backup_iter_files()
+    total_bytes = 0
+    md_count = 0
+    attach_count = 0
+    for p in files:
+        try:
+            total_bytes += p.stat().st_size
+        except OSError:
+            continue
+        if p.suffix.lower() == ".md":
+            md_count += 1
+        else:
+            attach_count += 1
+    return render_template(
+        "admin_backup.html",
+        md_count=md_count,
+        attach_count=attach_count,
+        total_files=md_count + attach_count,
+        total_human=_human_bytes(total_bytes),
+        data_dir=str(DATA_DIR),
+    )
 
 
 @app.route("/admin/users", methods=["GET", "POST"])

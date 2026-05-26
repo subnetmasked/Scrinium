@@ -29,5 +29,5 @@ services:
       SCRINIUM_TLS_CERT: ${SCRINIUM_TLS_CERT:-/etc/ssl/scrinium/fullchain.pem}
       SCRINIUM_TLS_KEY: ${SCRINIUM_TLS_KEY:-/etc/ssl/scrinium/privkey.pem}
     volumes:
-      - ./nginx/scrinium.conf.template:/etc/nginx/templates/scrinium.conf.template:ro,Z
-      - ${SCRINIUM_TLS_HOST_DIR:-./nginx/certs}:/etc/ssl/scrinium:ro
+      - ./nginx/scrinium.conf.template:/etc/nginx/templates/default.conf.template:ro,Z
+      - ${SCRINIUM_TLS_HOST_DIR:-./nginx/certs}:/etc/ssl/scrinium:ro,Z

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <clipPath id="card"><rect width="200" height="200" rx="42"/></clipPath>
+  </defs>
+  <rect width="200" height="200" rx="42" fill="#0d1117"/>
+  <rect x="44" y="52"  width="104" height="16" rx="4" fill="#2dd4bf"/>
+  <rect x="44" y="80"  width="80"  height="16" rx="4" fill="#2dd4bf" opacity=".6"/>
+  <rect x="44" y="108" width="56"  height="16" rx="4" fill="#2dd4bf" opacity=".3"/>
+  <text clip-path="url(#card)" x="112" y="172"
+        font-family="Georgia,serif" font-weight="700" font-style="italic"
+        font-size="86" fill="#ffffff"
+        transform="rotate(12,148,150)">S</text>
+</svg>

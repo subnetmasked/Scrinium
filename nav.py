@@ -18,10 +18,19 @@ from typing import Iterable, Optional
 
 MD_EXT = ".md"
 
+# Folders that are part of Scrinium's storage layout but should never
+# appear in any user-facing listing (sidebar tree, folder views, etc.).
+HIDDEN_DIRS = frozenset({"_attachments"})
+
+
+def is_hidden_entry(name: str) -> bool:
+    """True for dotfiles and any backend-only directory name."""
+    return name.startswith(".") or name in HIDDEN_DIRS
+
 RESERVED_SLUGS = {
     "new", "edit", "delete", "admin", "static", "api", "loose", "other",
     "login", "logout", "setup", "search", "health", "dash",
-    "c", "d", "e", "f", "n", "s",
+    "c", "d", "e", "f", "n", "s", "a",
 }
 
 DEFAULT_CATEGORIES: list[dict] = [
@@ -268,7 +277,7 @@ def build_tree(folder: Path, root: Path) -> dict:
     if not folder.exists():
         return {"folders": folders, "docs": docs}
     for entry in _list_dir(folder):
-        if entry.name.startswith("."):
+        if is_hidden_entry(entry.name):
             continue
         if entry.is_dir():
             folders.append(
@@ -295,14 +304,32 @@ _TAG_LINE_RE = re.compile(r"^\s*tags?\s*:\s*(.+?)\s*$", re.IGNORECASE)
 
 
 def parse_overview_tags(path: Optional[Path]) -> list[str]:
-    """Extract a tag list from a markdown file.
-
-    Looks for a line like ``tags: foo, bar, baz`` (or ``Tag: ...``) within
-    the first ~25 lines. Hashtag prefixes are stripped. Both ``,`` and ``;``
-    work as separators. Returns an empty list if nothing is found.
-    """
+    """Extract tags from YAML frontmatter or legacy ``tags:`` line."""
     if not path:
         return []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    try:
+        import frontmatter as fm_mod
+
+        parsed, _body = fm_mod.parse(text)
+        tags = parsed.get("tags")
+        if isinstance(tags, list):
+            out: list[str] = []
+            seen: set[str] = set()
+            for t in tags:
+                s = str(t).strip().lstrip("#").strip()
+                if s and s.lower() not in seen:
+                    seen.add(s.lower())
+                    out.append(s)
+            if out:
+                return out
+    except Exception:
+        pass
+
     try:
         with path.open(encoding="utf-8") as f:
             for i, line in enumerate(f):
@@ -322,6 +349,46 @@ def parse_overview_tags(path: Optional[Path]) -> list[str]:
     except OSError:
         return []
     return []
+
+
+def resolve_wikilink(target: str, all_paths: set[str]) -> dict:
+    """Resolve ``[[target]]`` against known doc paths.
+
+    Returns a dict with ``status`` in ``resolved``, ``ambiguous``, ``broken``
+    and optional ``rel`` / ``title``.
+    """
+    raw = (target or "").strip().strip("/")
+    if not raw:
+        return {"status": "broken"}
+
+    norm = raw.replace("\\", "/").strip("/")
+    lower_map = {p.lower(): p for p in all_paths}
+
+    if norm in all_paths:
+        return {"status": "resolved", "rel": norm}
+
+    exact_ci = lower_map.get(norm.lower())
+    if exact_ci:
+        return {"status": "resolved", "rel": exact_ci}
+
+    stem = norm.rsplit("/", 1)[-1].lower()
+    stem_matches = sorted(
+        p for p in all_paths if p.rsplit("/", 1)[-1].lower() == stem
+    )
+    if len(stem_matches) == 1:
+        return {"status": "resolved", "rel": stem_matches[0]}
+    if len(stem_matches) > 1:
+        chosen = stem_matches[0]
+        title = "Multiple matches: " + ", ".join(stem_matches[:5])
+        if len(stem_matches) > 5:
+            title += ", ..."
+        return {
+            "status": "ambiguous",
+            "rel": chosen,
+            "title": title,
+            "matches": stem_matches,
+        }
+    return {"status": "broken"}
 
 
 def count_descendant_docs(node: dict) -> int:
@@ -345,7 +412,7 @@ def build_navigation(root: Path, categories: list[dict]) -> dict:
 
     if root.exists():
         for entry in _list_dir(root):
-            if entry.name.startswith("."):
+            if is_hidden_entry(entry.name):
                 continue
             if entry.is_file() and entry.suffix == MD_EXT:
                 loose_docs.append(
@@ -369,7 +436,7 @@ def build_navigation(root: Path, categories: list[dict]) -> dict:
         entries: list[dict] = []
         if cat_path.is_dir():
             for child in _list_dir(cat_path):
-                if child.name.startswith("."):
+                if is_hidden_entry(child.name):
                     continue
                 if child.is_dir():
                     sub = build_tree(child, root)
@@ -506,7 +573,7 @@ def dashboard_data(
             except ValueError:
                 continue
             parts = rel.parts
-            if any(part.startswith(".") for part in parts):
+            if any(is_hidden_entry(part) for part in parts):
                 continue
             try:
                 stat = p.stat()
@@ -636,6 +703,7 @@ __all__: Iterable[str] = (
     "find_category",
     "find_overview",
     "parse_overview_tags",
+    "resolve_wikilink",
     "doc_rel",
     "build_tree",
     "build_navigation",

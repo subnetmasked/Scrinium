@@ -5,21 +5,41 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml"
+        href="{{ url_for('static', filename='scrinium-icon.svg') }}?v={{ app_version }}">
+  <link rel="icon" type="image/png" sizes="32x32"
+        href="{{ url_for('static', filename='icon-32.png') }}?v={{ app_version }}">
+  <link rel="icon" type="image/png" sizes="16x16"
+        href="{{ url_for('static', filename='icon-16.png') }}?v={{ app_version }}">
+  <link rel="apple-touch-icon" sizes="180x180"
+        href="{{ url_for('static', filename='apple-touch-icon.png') }}?v={{ app_version }}">
+  <link rel="alternate icon"
+        href="{{ url_for('static', filename='favicon.ico') }}?v={{ app_version }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="{{ url_for('index') }}">{{ site_name }}</a>
-    <form class="search" action="{{ url_for('search') }}" method="get" role="search">
-      <input type="search" name="q" placeholder="Search…" value="{{ request.args.get('q','') }}" autocomplete="off">
-    </form>
+    <div class="topbar-left">
+      <a class="brand" href="{{ url_for('index') }}" aria-label="{{ site_name }} home">
+        <img class="brand-logo"
+             src="{{ url_for('static', filename='scrinium-icon.svg') }}?v={{ app_version }}"
+             alt="" width="30" height="30">
+        <span class="brand-name">{{ site_name }}</span>
+      </a>
+      <form class="search" action="{{ url_for('search') }}" method="get" role="search">
+        <input type="search" name="q" placeholder="Search…" value="{{ request.args.get('q','') }}" autocomplete="off">
+      </form>
+    </div>
     <nav class="actions">
       <a class="btn" href="{{ url_for('new') }}">+ New doc</a>
       {% if current_user %}
+        <a class="btn{% if request.endpoint == 'index' %} active{% endif %}"
+           href="{{ url_for('index') }}">Docs</a>
         <a class="btn{% if request.endpoint and request.endpoint.startswith('dash') %} active{% endif %}"
            href="{{ url_for('dash') }}">Dashboard</a>
         {% if current_user.is_admin %}
-          <a class="btn" href="{{ url_for('admin_users') }}">Admin</a>
+          <a class="btn{% if request.endpoint and request.endpoint.startswith('admin') %} active{% endif %}"
+             href="{{ url_for('admin_users') }}">Admin</a>
         {% endif %}
         <span class="user-pill" title="Signed in as {{ current_user.username }} ({{ current_user.source }})">
           {{ current_user.username }}

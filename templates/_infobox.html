@@ -1,0 +1,32 @@
+{% if fm_rows %}
+<aside class="infobox">
+  <details open>
+    <summary class="infobox-summary">
+      <span class="infobox-title">{{ fm.title or title }}</span>
+      <span class="infobox-chevron" aria-hidden="true"></span>
+    </summary>
+    <dl class="infobox-rows">
+      {% for key, value in fm_rows %}
+        <dt>{{ key | replace('_', ' ') | title }}</dt>
+        <dd>
+          {% if key == 'tags' and value is iterable and value is not string %}
+            <div class="tag-row">
+              {% for t in value %}
+                <a class="tag-chip" href="{{ url_for('tag_page', tag=t) }}">{{ t }}</a>
+              {% endfor %}
+            </div>
+          {% elif value is iterable and value is not string %}
+            <code class="infobox-code">{{ value | fm_value }}</code>
+          {% elif value is boolean %}
+            {{ value | fm_value }}
+          {% elif value | is_url %}
+            <a href="{{ value }}" rel="noopener noreferrer">{{ value }}</a>
+          {% else %}
+            {{ value | fm_value }}
+          {% endif %}
+        </dd>
+      {% endfor %}
+    </dl>
+  </details>
+</aside>
+{% endif %}

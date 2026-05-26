@@ -5,6 +5,7 @@
     <a class="tab" href="{{ url_for('admin_users') }}">Users</a>
     <a class="tab active" href="{{ url_for('admin_categories') }}">Categories</a>
     <a class="tab" href="{{ url_for('admin_ldap') }}">LDAP</a>
+    <a class="tab" href="{{ url_for('admin_backup') }}">Backup</a>
   </div>
 
   {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
