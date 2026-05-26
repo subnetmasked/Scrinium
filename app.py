@@ -40,7 +40,7 @@ PORT = int(os.environ.get("SCRINIUM_PORT", "8080"))
 SITE_NAME = os.environ.get("SCRINIUM_SITE_NAME", "Scrinium")
 HTTPS_ONLY = os.environ.get("SCRINIUM_HTTPS_ONLY", "0") == "1"
 TRUST_PROXY = os.environ.get("SCRINIUM_TRUST_PROXY", "0") == "1"
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.5.1-debug"
 
 MD_EXT = ".md"
 _BAD_PATH_CHARS = set('/\\:*?"<>|')
@@ -196,10 +196,15 @@ def inject_globals():
 
 @app.before_request
 def gate():
+    print(f"[REQ] {request.method} {request.path} endpoint={request.endpoint} from={request.remote_addr}", flush=True)
     if request.endpoint in {"static", "health"}:
         return
     if request.method == "POST" and request.endpoint not in CSRF_EXEMPT_ENDPOINTS:
-        auth.verify_csrf()
+        try:
+            auth.verify_csrf()
+        except Exception as e:
+            print(f"[REQ] CSRF failed for {request.path}: {e}", flush=True)
+            raise
     if request.endpoint in PUBLIC_ENDPOINTS:
         return
     if request.endpoint is None:
