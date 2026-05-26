@@ -16,6 +16,8 @@
     <nav class="actions">
       <a class="btn" href="{{ url_for('new') }}">+ New doc</a>
       {% if current_user %}
+        <a class="btn{% if request.endpoint and request.endpoint.startswith('dash') %} active{% endif %}"
+           href="{{ url_for('dash') }}">Dashboard</a>
         {% if current_user.is_admin %}
           <a class="btn" href="{{ url_for('admin_users') }}">Admin</a>
         {% endif %}

@@ -1090,6 +1090,143 @@ body.centered {
 
 .muted { color: var(--text-dim); }
 
+/* ------- topbar active state ------- */
+
+.actions .btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ------- /dash links dashboard ------- */
+
+.dash-section {
+  margin-top: 1.4rem;
+}
+.dash-section:first-of-type { margin-top: 1rem; }
+.dash-section-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  font-weight: 600;
+  border: none;
+  padding: 0;
+}
+
+.dash-link-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.7rem;
+}
+
+.dash-link-card {
+  position: relative;
+  display: flex;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.12s ease, background 0.12s ease,
+    transform 0.12s ease;
+  overflow: hidden;
+}
+.dash-link-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elev-2);
+}
+
+.dash-link-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+}
+.dash-link-main:hover { text-decoration: none; }
+
+.dash-link-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--bg-elev-2);
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.dash-link-text {
+  min-width: 0;
+  flex: 1;
+}
+.dash-link-title {
+  font-weight: 600;
+  font-size: 0.98rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-link-host {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  margin-top: 0.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-link-desc {
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.dash-link-tools {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  display: flex;
+  gap: 0.2rem;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.dash-link-card:hover .dash-link-tools,
+.dash-link-card:focus-within .dash-link-tools { opacity: 1; }
+
+.dash-link-tool {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-decoration: none;
+  line-height: 1.2;
+}
+.dash-link-tool:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  text-decoration: none;
+}
+.dash-link-tool.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.dash-card-form {
+  margin: 1rem 0 1.25rem;
+  max-width: 560px;
+}
+.dash-empty {
+  padding: 1.2rem 1rem;
+  text-align: center;
+}
+
 /* ------- pygments codehilite (dark) ------- */
 
 .codehilite { background: transparent; }

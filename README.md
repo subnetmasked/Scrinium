@@ -8,8 +8,11 @@ login, with optional **LDAP / Active Directory** authentication.
 - Server-rendered Flask, Pygments syntax highlighting, vanilla CSS/JS.
 - Per-session login, scrypt-hashed local users, optional LDAP bind auth.
 - Admin panel for managing local users, categories, and LDAP.
-- **Dashboard** at `/`: stats, quick actions, recently-updated docs, recent
-  entries, tag cloud, and an optional pinned `welcome.md` message.
+- **Home dashboard** at `/`: stats, quick actions, recently-updated docs,
+  recent entries, tag cloud, and an optional pinned `welcome.md` message.
+- **Links dashboard** at `/dash`: shared, wiki-style grid of tool/service
+  bookmarks with auto-fetched favicons. Any signed-in user can add or
+  edit cards.
 - **Categories → entries → docs** sidebar (think Netbox-lite for IT docs)
   with per-category icons and drag-to-reorder in the admin panel.
 - Per-entry `tags:` line in `overview.md` surfaces as clickable chips that
@@ -240,7 +243,7 @@ For a strictly internal VM accessed by IP, leave the defaults alone.
 ```bash
 podman-compose up -d --build
 curl -s http://127.0.0.1:8080/health
-# expect: {"data":"/data","ok":true,"version":"0.5.0"}
+# expect: {"data":"/data","ok":true,"version":"0.6.0"}
 ```
 
 ### 7. Open the firewall
@@ -307,28 +310,49 @@ tar -czf /var/backups/scrinium-$(date +%F).tgz -C ~/scrinium data
 Combine with `vzdump` (Proxmox) or your usual VM-snapshot policy for
 belt-and-braces protection.
 
-### 11. (Optional) reverse proxy with TLS
+### 11. TLS with the bundled nginx (recommended)
 
-Caddy is the shortest path on Fedora and handles certificates for you:
+`compose.yaml` ships with an nginx sidecar that terminates TLS in front of
+Scrinium. All deployment-specific values live in a `.env` file at the
+project root — nothing is hardcoded in the repo.
 
 ```bash
-sudo dnf install -y caddy
-sudo systemctl enable --now caddy
+cp .env.example .env
+$EDITOR .env       # set SCRINIUM_DOMAIN, point SCRINIUM_TLS_HOST_DIR at
+                   # your cert directory, etc.
 ```
 
-`/etc/caddy/Caddyfile`:
+Drop your certificate files at the paths referenced in `.env`. By default
+the nginx container expects:
 
-```caddy
-docs.example.com {
-    reverse_proxy 127.0.0.1:8080
-    encode zstd gzip
-}
+- `${SCRINIUM_TLS_HOST_DIR}/fullchain.pem`
+- `${SCRINIUM_TLS_HOST_DIR}/privkey.pem`
+
+Three common sources:
+
+- **Existing wildcard cert** — set `SCRINIUM_TLS_HOST_DIR` to wherever
+  it already lives on the host (e.g. `/etc/ssl/mycorp-wildcard`).
+- **certbot** — point `SCRINIUM_TLS_HOST_DIR` at
+  `/etc/letsencrypt/live/<domain>` and run renewals on the host with
+  `certbot renew --deploy-hook 'podman exec scrinium-nginx nginx -s reload'`.
+- **Self-signed (lab only)** —
+  `openssl req -x509 -newkey rsa:2048 -keyout nginx/certs/privkey.pem \
+   -out nginx/certs/fullchain.pem -days 365 -nodes -subj "/CN=$SCRINIUM_DOMAIN"`.
+
+Then bring it up:
+
+```bash
+podman-compose up -d --build
 ```
 
-`sudo systemctl reload caddy` and you're done — Let's Encrypt is
-provisioned automatically. Make sure step 5's
-`SCRINIUM_HTTPS_ONLY=1` and `SCRINIUM_TRUST_PROXY=1` are set so
-cookies and client IPs work right behind the proxy.
+The nginx container expands `nginx/scrinium.conf.template` with the env
+vars at startup, so changing `.env` and restarting nginx is enough to
+re-roll the TLS config — no editing of committed files.
+
+> Prefer a different TLS solution (Caddy, Traefik, an existing nginx on
+> the host)? Comment out the `nginx` service in `compose.yaml`, change
+> the `scrinium` service to publish `ports: ["8080:8080"]`, and point
+> your existing terminator at it.
 
 ## Layout
 

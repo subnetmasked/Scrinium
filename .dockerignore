@@ -6,4 +6,7 @@ __pycache__
 .venv
 venv
 data
+nginx
+.env
+.env.example
 README.md

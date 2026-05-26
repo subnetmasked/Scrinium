@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — {{ site_name }}{% endblock %}
+{% block content %}
+  <section class="dash-hero">
+    <div class="dash-hero-greeting">
+      <h1>Dashboard</h1>
+      <p class="muted">
+        Quick links to tools, services, and whatever else the team reaches
+        for. Anyone signed in can add or edit cards.
+      </p>
+    </div>
+    <div class="dash-hero-actions">
+      {% if not new_form and not editing %}
+        <a class="btn primary" href="{{ url_for('dash', new=1) }}">+ Add link</a>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if editing %}
+    {% set ev = form_values if (form_values and form_values.mode == 'edit' and form_values.id == editing.id) else None %}
+    <article class="dash-card dash-card-form" id="edit-form">
+      <div class="dash-card-head">
+        <h2>Edit "{{ editing.title }}"</h2>
+      </div>
+      {% with action = url_for('dash_edit', link_id=editing.id),
+              mode = 'edit',
+              values = ev or {'title': editing.title, 'url': editing.url,
+                              'description': editing.description,
+                              'section': editing.section},
+              sections = sections,
+              error = form_error,
+              cancel_url = url_for('dash') %}
+        {% include "dash_form.html" %}
+      {% endwith %}
+    </article>
+  {% endif %}
+
+  {% if new_form %}
+    <article class="dash-card dash-card-form" id="new-form">
+      <div class="dash-card-head">
+        <h2>New link</h2>
+      </div>
+      {% with action = url_for('dash_new'),
+              mode = 'new',
+              values = (form_values if (form_values and form_values.mode == 'new') else {}),
+              sections = sections,
+              error = form_error,
+              cancel_url = url_for('dash') %}
+        {% include "dash_form.html" %}
+      {% endwith %}
+    </article>
+  {% endif %}
+
+  {% if not groups %}
+    <article class="dash-card dash-empty">
+      <p class="muted">
+        Nothing here yet.
+        <a href="{{ url_for('dash', new=1) }}">Add your first link →</a>
+      </p>
+    </article>
+  {% endif %}
+
+  {% for group in groups %}
+    <section class="dash-section">
+      <h2 class="dash-section-title">{{ group.display_name }}</h2>
+      <div class="dash-link-grid">
+        {% for link in group.links %}
+          <article class="dash-link-card">
+            <a class="dash-link-main" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
+              <img class="dash-link-icon" loading="lazy" alt=""
+                   src="{{ url_for('dash_favicon', link_id=link.id) }}">
+              <div class="dash-link-text">
+                <div class="dash-link-title">{{ link.title }}</div>
+                <div class="dash-link-host muted small">{{ link.url | hostlabel }}</div>
+                {% if link.description %}
+                  <div class="dash-link-desc">{{ link.description }}</div>
+                {% endif %}
+              </div>
+            </a>
+            <div class="dash-link-tools">
+              <a class="dash-link-tool" href="{{ url_for('dash', edit=link.id) }}#edit-form"
+                 title="Edit link">Edit</a>
+              <form method="post" action="{{ url_for('dash_refresh_favicon', link_id=link.id) }}"
+                    class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="dash-link-tool" type="submit" title="Re-fetch favicon">Icon</button>
+              </form>
+              <form method="post" action="{{ url_for('dash_delete', link_id=link.id) }}"
+                    class="inline-form"
+                    onsubmit="return confirm('Delete &quot;{{ link.title | escape }}&quot;?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="dash-link-tool danger" type="submit" title="Delete">Del</button>
+              </form>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+{% endblock %}

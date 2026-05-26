@@ -1,0 +1,54 @@
+# Rendered by the official nginx image's envsubst at container start.
+# Variables come from the nginx container environment (see compose.yaml / .env):
+#   SCRINIUM_DOMAIN     - hostname this site is served as (e.g. docs.example.com)
+#   SCRINIUM_TLS_CERT   - path inside the container to the cert/fullchain
+#   SCRINIUM_TLS_KEY    - path inside the container to the private key
+
+upstream scrinium_app {
+    server scrinium:8080;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${SCRINIUM_DOMAIN};
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${SCRINIUM_DOMAIN};
+
+    ssl_certificate     ${SCRINIUM_TLS_CERT};
+    ssl_certificate_key ${SCRINIUM_TLS_KEY};
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml;
+    gzip_min_length 256;
+
+    client_max_body_size 8m;
+
+    location / {
+        proxy_pass http://scrinium_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_read_timeout 120s;
+    }
+}

@@ -20,7 +20,8 @@ MD_EXT = ".md"
 
 RESERVED_SLUGS = {
     "new", "edit", "delete", "admin", "static", "api", "loose", "other",
-    "login", "logout", "setup", "search", "health", "c", "d", "e", "f", "n", "s",
+    "login", "logout", "setup", "search", "health", "dash",
+    "c", "d", "e", "f", "n", "s",
 }
 
 DEFAULT_CATEGORIES: list[dict] = [

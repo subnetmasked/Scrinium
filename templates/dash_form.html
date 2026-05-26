@@ -1,0 +1,43 @@
+{# Inline form used by both "new link" and "edit link" flows. Caller passes:
+   - mode: "new" | "edit"
+   - action: form post URL
+   - values: dict with title/url/description/section (may be empty)
+   - sections: list of existing section names (for the datalist)
+   - error: optional error string to render at the top of the form
+   - cancel_url: where the Cancel button should go
+#}
+<form method="post" action="{{ action }}" class="form dash-form" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if error %}
+    <div class="alert error">{{ error }}</div>
+  {% endif %}
+  <label>
+    <span>Title</span>
+    <input name="title" value="{{ values.title or '' }}" maxlength="120"
+           required autofocus spellcheck="false">
+  </label>
+  <label>
+    <span>URL</span>
+    <input name="url" type="url" value="{{ values.url or '' }}"
+           placeholder="https://…" required spellcheck="false">
+  </label>
+  <label>
+    <span>Description <small class="muted">(optional)</small></span>
+    <input name="description" value="{{ values.description or '' }}"
+           maxlength="280" spellcheck="false">
+  </label>
+  <label>
+    <span>Section <small class="muted">(optional, groups cards)</small></span>
+    <input name="section" value="{{ values.section or '' }}"
+           list="dash-sections" maxlength="60" spellcheck="false">
+    <datalist id="dash-sections">
+      {% for s in sections %}<option value="{{ s }}">{% endfor %}
+    </datalist>
+  </label>
+  <div class="form-actions">
+    <button class="btn primary" type="submit">
+      {{ 'Save changes' if mode == 'edit' else 'Add link' }}
+    </button>
+    <a class="btn" href="{{ cancel_url }}">Cancel</a>
+  </div>
+</form>

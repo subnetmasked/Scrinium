@@ -8,14 +8,17 @@ import shutil
 import sys
 from datetime import timedelta
 from pathlib import Path
+from typing import Optional
 
 import markdown
 from flask import (
     Flask,
+    Response,
     abort,
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
 )
@@ -23,6 +26,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import auth
+import links
 import nav
 
 
@@ -40,7 +44,7 @@ PORT = int(os.environ.get("SCRINIUM_PORT", "8080"))
 SITE_NAME = os.environ.get("SCRINIUM_SITE_NAME", "Scrinium")
 HTTPS_ONLY = os.environ.get("SCRINIUM_HTTPS_ONLY", "0") == "1"
 TRUST_PROXY = os.environ.get("SCRINIUM_TRUST_PROXY", "0") == "1"
-APP_VERSION = "0.5.1-debug"
+APP_VERSION = "0.6.0"
 
 MD_EXT = ".md"
 _BAD_PATH_CHARS = set('/\\:*?"<>|')
@@ -88,6 +92,7 @@ if TRUST_PROXY:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 auth.init_db(Path(app.config["AUTH_DB"]))
+links.init_db(Path(app.config["AUTH_DB"]))
 nav.load_categories(CONFIG_DIR)
 
 
@@ -196,15 +201,10 @@ def inject_globals():
 
 @app.before_request
 def gate():
-    print(f"[REQ] {request.method} {request.path} endpoint={request.endpoint} from={request.remote_addr}", flush=True)
     if request.endpoint in {"static", "health"}:
         return
     if request.method == "POST" and request.endpoint not in CSRF_EXEMPT_ENDPOINTS:
-        try:
-            auth.verify_csrf()
-        except Exception as e:
-            print(f"[REQ] CSRF failed for {request.path}: {e}", flush=True)
-            raise
+        auth.verify_csrf()
     if request.endpoint in PUBLIC_ENDPOINTS:
         return
     if request.endpoint is None:
@@ -268,14 +268,12 @@ def login():
         password = request.form.get("password", "")
         rate_key = auth.login_rate_key(username_value)
         remaining = auth.lockout_remaining(rate_key)
-        print(f"[DEBUG] login POST user={username_value!r} locked_out={remaining>0}", flush=True)
         if remaining > 0:
             error = (
                 f"Too many failed attempts. Try again in {remaining} seconds."
             )
         else:
             user = auth.authenticate(username_value, password)
-            print(f"[DEBUG] authenticate result={user is not None}", flush=True)
             if user is None:
                 auth.record_failure(rate_key)
                 error = "Invalid username or password."
@@ -343,6 +341,11 @@ def _jinja_reltime(value):
         return nav.relative_time(float(value))
     except (TypeError, ValueError):
         return ""
+
+
+@app.template_filter("hostlabel")
+def _jinja_hostlabel(value):
+    return links.host_label(value or "")
 
 
 @app.route("/d/<path:path>")
@@ -653,6 +656,151 @@ def api_preview():
     body = request.get_data(as_text=True)
     md_renderer.reset()
     return md_renderer.convert(body)
+
+
+# ---------------------------------------------------------------------------
+# links dashboard (/dash)
+# ---------------------------------------------------------------------------
+
+
+@app.route("/dash")
+@auth.login_required
+def dash():
+    groups = links.grouped_links()
+    sections = links.existing_sections()
+    edit_id_raw = request.args.get("edit", "")
+    new_form = request.args.get("new") is not None
+    editing = None
+    if edit_id_raw.isdigit():
+        editing = links.get_link(int(edit_id_raw))
+    form_values = None
+    form_error = session.pop("dash_form_error", None)
+    if form_error:
+        form_values = session.pop("dash_form_values", None)
+    return render_template(
+        "dash.html",
+        groups=groups,
+        sections=sections,
+        editing=editing,
+        new_form=new_form,
+        form_error=form_error,
+        form_values=form_values,
+    )
+
+
+def _dash_form_payload() -> dict:
+    return {
+        "title": request.form.get("title", ""),
+        "url": request.form.get("url", ""),
+        "description": request.form.get("description", ""),
+        "section": request.form.get("section", ""),
+    }
+
+
+def _stash_form_error(message: str, mode: str, link_id: Optional[int] = None) -> None:
+    session["dash_form_error"] = message
+    session["dash_form_values"] = {
+        **_dash_form_payload(),
+        "mode": mode,
+        "id": link_id,
+    }
+
+
+@app.route("/dash/new", methods=["POST"])
+@auth.login_required
+def dash_new():
+    try:
+        title = links.normalize_title(request.form.get("title", ""))
+        url = links.normalize_url(request.form.get("url", ""))
+        description = links.normalize_description(
+            request.form.get("description", "")
+        )
+        section = links.normalize_section(request.form.get("section", ""))
+    except ValueError as e:
+        _stash_form_error(str(e), "new")
+        return redirect(url_for("dash", new=1))
+    favicon = links.fetch_favicon(url)
+    me = auth.current_user()
+    links.create_link(
+        title=title,
+        url=url,
+        description=description,
+        section=section,
+        favicon=favicon,
+        created_by=(me["id"] if me else None),
+    )
+    return redirect(url_for("dash"))
+
+
+@app.route("/dash/<int:link_id>/edit", methods=["POST"])
+@auth.login_required
+def dash_edit(link_id: int):
+    existing = links.get_link(link_id)
+    if existing is None:
+        abort(404)
+    try:
+        title = links.normalize_title(request.form.get("title", ""))
+        url = links.normalize_url(request.form.get("url", ""))
+        description = links.normalize_description(
+            request.form.get("description", "")
+        )
+        section = links.normalize_section(request.form.get("section", ""))
+    except ValueError as e:
+        _stash_form_error(str(e), "edit", link_id)
+        return redirect(url_for("dash", edit=link_id))
+    new_favicon: Optional[str] = None
+    if url != existing["url"]:
+        fetched = links.fetch_favicon(url)
+        new_favicon = fetched
+    links.update_link(
+        link_id,
+        title=title,
+        url=url,
+        description=description,
+        section=section,
+        favicon=new_favicon,
+    )
+    return redirect(url_for("dash"))
+
+
+@app.route("/dash/<int:link_id>/delete", methods=["POST"])
+@auth.login_required
+def dash_delete(link_id: int):
+    if links.get_link(link_id) is None:
+        abort(404)
+    links.delete_link(link_id)
+    return redirect(url_for("dash"))
+
+
+@app.route("/dash/<int:link_id>/refresh-favicon", methods=["POST"])
+@auth.login_required
+def dash_refresh_favicon(link_id: int):
+    existing = links.get_link(link_id)
+    if existing is None:
+        abort(404)
+    fetched = links.fetch_favicon(existing["url"])
+    links.update_link(
+        link_id,
+        title=existing["title"],
+        url=existing["url"],
+        description=existing["description"],
+        section=existing["section"],
+        favicon=fetched,
+    )
+    return redirect(url_for("dash"))
+
+
+@app.route("/dash/favicon/<int:link_id>")
+@auth.login_required
+def dash_favicon(link_id: int):
+    row = links.get_link(link_id)
+    if row is None:
+        abort(404)
+    p = links.favicon_path(row["favicon"]) if row["favicon"] else None
+    if p is not None:
+        return send_file(p, max_age=86400)
+    svg = links.letter_tile_svg(row["title"] or links.host_label(row["url"]))
+    return Response(svg, mimetype="image/svg+xml")
 
 
 # ---------------------------------------------------------------------------

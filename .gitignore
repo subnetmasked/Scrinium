@@ -9,3 +9,5 @@ venv/
 *.log
 data/
 !data/.gitkeep
+nginx/certs/
+!nginx/certs/.gitkeep

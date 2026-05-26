@@ -293,13 +293,10 @@ def ldap_test(settings: dict) -> LDAPResult:
 def ldap_authenticate(username: str, password: str) -> Optional[dict]:
     """Bind as the service account, locate the user DN, then bind as the user
     to verify the password. Returns a small dict on success, else None."""
-    print(f"[DEBUG] ldap_authenticate called for {username!r}", flush=True)
     if not password:
-        print("[DEBUG] ldap_authenticate: empty password, aborting", flush=True)
         return None
     settings = ldap_settings()
     if not settings.get("enabled") or not settings.get("server_uri"):
-        print(f"[DEBUG] ldap_authenticate: LDAP disabled or no URI (enabled={settings.get('enabled')})", flush=True)
         return None
     try:
         from ldap3 import ALL, Connection, Server, Tls  # type: ignore[import-not-found]
