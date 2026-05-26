@@ -1,0 +1,22 @@
+{# Renders the "Related links" panel for doc/entry/folder views.
+   Caller must pass `related_links` (list of dashboard_links rows). #}
+{% if related_links %}
+  <aside class="related-links">
+    <h3 class="related-links-title">Related links</h3>
+    <ul class="related-links-list">
+      {% for link in related_links %}
+        <li>
+          <a class="related-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
+            <img class="related-link-icon" loading="lazy" alt=""
+                 src="{{ url_for('dash_favicon', link_id=link.id) }}">
+            <span class="related-link-text">
+              <span class="related-link-title">{{ link.title }}</span>
+              <span class="related-link-host muted small">{{ link.url | hostlabel }}</span>
+            </span>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+    <a class="muted small" href="{{ url_for('dash') }}">Manage on dashboard →</a>
+  </aside>
+{% endif %}

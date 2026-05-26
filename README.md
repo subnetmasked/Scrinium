@@ -1,6 +1,8 @@
 # Scrinium
 
 A small, dark-themed, **markdown-native** IT documentation web app.
+Free software (GPL-3.0-or-later) by
+[subnetmasked](https://github.com/subnetmasked).
 Designed to run as a single rootless **Podman** container, gated behind a
 login, with optional **LDAP / Active Directory** authentication.
 
@@ -328,6 +330,12 @@ the nginx container expects:
 - `${SCRINIUM_TLS_HOST_DIR}/fullchain.pem`
 - `${SCRINIUM_TLS_HOST_DIR}/privkey.pem`
 
+For rootless Podman, the Linux user running `podman-compose` must be able
+to read both files. If you store certs under `/etc/ssl/...`, either make
+that directory owned by the deploy user or grant that user read access to
+`privkey.pem`; a `root:root` private key with mode `600` will not be
+readable from the rootless nginx container.
+
 By default, the compose file publishes nginx on `8080` and `8443` because
 rootless Podman cannot bind host ports below 1024 on a stock Linux host.
 For a production hostname on normal HTTPS (`https://docs.example.com/`),
@@ -392,4 +400,12 @@ re-roll the TLS config — no editing of committed files.
 
 ## License
 
-MIT.
+Scrinium is **free software** licensed under the
+[GNU General Public License v3.0 or later](LICENSE) (GPL-3.0-or-later).
+
+Copyright © 2026 [subnetmasked](https://github.com/subnetmasked).
+
+You may use, study, modify, and redistribute this program under the terms of
+the GPL. See the [LICENSE](LICENSE) file for the full text.
+
+Source: [github.com/subnetmasked/Scrinium](https://github.com/subnetmasked/Scrinium)

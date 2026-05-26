@@ -45,6 +45,10 @@ SITE_NAME = os.environ.get("SCRINIUM_SITE_NAME", "Scrinium")
 HTTPS_ONLY = os.environ.get("SCRINIUM_HTTPS_ONLY", "0") == "1"
 TRUST_PROXY = os.environ.get("SCRINIUM_TRUST_PROXY", "0") == "1"
 APP_VERSION = "0.6.0"
+PROJECT_URL = "https://github.com/subnetmasked/Scrinium"
+AUTHOR_NAME = "subnetmasked"
+AUTHOR_URL = "https://github.com/subnetmasked"
+LICENSE_NAME = "GPL-3.0-or-later"
 
 MD_EXT = ".md"
 _BAD_PATH_CHARS = set('/\\:*?"<>|')
@@ -176,6 +180,29 @@ def categories() -> list[dict]:
     return nav.load_categories(CONFIG_DIR)
 
 
+def all_doc_paths() -> list[str]:
+    """Every relative path under DATA_DIR that can be linked to from a
+    dashboard card: folders (categories, entries, sub-folders) and
+    markdown docs (with .md stripped, matching the existing `rel` form)."""
+    paths: set[str] = set()
+    if not DATA_DIR.exists():
+        return []
+    for p in DATA_DIR.rglob("*"):
+        try:
+            rel_parts = p.relative_to(DATA_DIR).parts
+        except ValueError:
+            continue
+        if any(part.startswith(".") for part in rel_parts):
+            continue
+        if not rel_parts:
+            continue
+        if p.is_dir():
+            paths.add("/".join(rel_parts))
+        elif p.is_file() and p.suffix == MD_EXT:
+            paths.add("/".join(rel_parts)[: -len(MD_EXT)])
+    return sorted(paths, key=str.lower)
+
+
 # ---------------------------------------------------------------------------
 # template context + auth gates
 # ---------------------------------------------------------------------------
@@ -191,6 +218,10 @@ def inject_globals():
     return {
         "site_name": SITE_NAME,
         "app_version": APP_VERSION,
+        "project_url": PROJECT_URL,
+        "author_name": AUTHOR_NAME,
+        "author_url": AUTHOR_URL,
+        "license_name": LICENSE_NAME,
         "navigation": nav.build_navigation(DATA_DIR, categories()),
         "current_user": user,
         "csrf_token": auth.csrf_token,
@@ -348,6 +379,28 @@ def _jinja_hostlabel(value):
     return links.host_label(value or "")
 
 
+@app.template_filter("docurl")
+def _jinja_docurl(rel):
+    """Return the right URL for a stored doc_path: /d/<rel> if it's a
+    markdown file under data/, otherwise /f/<rel>. Empty input yields
+    an empty string so templates can guard with `{% if ... %}`."""
+    rel = (rel or "").strip().strip("/")
+    if not rel:
+        return ""
+    try:
+        target_dir = (DATA_DIR / rel).resolve()
+        target_md = (DATA_DIR / (rel + MD_EXT)).resolve()
+    except (OSError, ValueError):
+        return ""
+    if target_dir != DATA_DIR and DATA_DIR not in target_dir.parents:
+        return ""
+    if target_md.is_file():
+        return url_for("view", path=rel)
+    if target_dir.is_dir():
+        return url_for("folder", path=rel)
+    return ""
+
+
 @app.route("/d/<path:path>")
 def view(path: str):
     target = safe_join(path + MD_EXT)
@@ -362,6 +415,7 @@ def view(path: str):
         html=html,
         crumbs=breadcrumbs(path),
         title=target.stem,
+        related_links=links.links_for_doc_path(path),
     )
 
 
@@ -433,6 +487,7 @@ def folder(path: str):
         overview_rel=overview_rel,
         entry_tags=entry_tags,
         category_entries=category_entries,
+        related_links=links.links_for_doc_prefix(path),
     )
 
 
@@ -668,6 +723,7 @@ def api_preview():
 def dash():
     groups = links.grouped_links()
     sections = links.existing_sections()
+    doc_paths = all_doc_paths()
     edit_id_raw = request.args.get("edit", "")
     new_form = request.args.get("new") is not None
     editing = None
@@ -681,10 +737,12 @@ def dash():
         "dash.html",
         groups=groups,
         sections=sections,
+        doc_paths=doc_paths,
         editing=editing,
         new_form=new_form,
         form_error=form_error,
         form_values=form_values,
+        hide_sidebar=True,
     )
 
 
@@ -694,6 +752,7 @@ def _dash_form_payload() -> dict:
         "url": request.form.get("url", ""),
         "description": request.form.get("description", ""),
         "section": request.form.get("section", ""),
+        "doc_path": request.form.get("doc_path", ""),
     }
 
 
@@ -709,6 +768,7 @@ def _stash_form_error(message: str, mode: str, link_id: Optional[int] = None) ->
 @app.route("/dash/new", methods=["POST"])
 @auth.login_required
 def dash_new():
+    valid_paths = set(all_doc_paths())
     try:
         title = links.normalize_title(request.form.get("title", ""))
         url = links.normalize_url(request.form.get("url", ""))
@@ -716,6 +776,9 @@ def dash_new():
             request.form.get("description", "")
         )
         section = links.normalize_section(request.form.get("section", ""))
+        doc_path = links.normalize_doc_path(
+            request.form.get("doc_path", ""), valid_paths=valid_paths
+        )
     except ValueError as e:
         _stash_form_error(str(e), "new")
         return redirect(url_for("dash", new=1))
@@ -727,6 +790,7 @@ def dash_new():
         description=description,
         section=section,
         favicon=favicon,
+        doc_path=doc_path,
         created_by=(me["id"] if me else None),
     )
     return redirect(url_for("dash"))
@@ -738,6 +802,7 @@ def dash_edit(link_id: int):
     existing = links.get_link(link_id)
     if existing is None:
         abort(404)
+    valid_paths = set(all_doc_paths())
     try:
         title = links.normalize_title(request.form.get("title", ""))
         url = links.normalize_url(request.form.get("url", ""))
@@ -745,6 +810,9 @@ def dash_edit(link_id: int):
             request.form.get("description", "")
         )
         section = links.normalize_section(request.form.get("section", ""))
+        doc_path = links.normalize_doc_path(
+            request.form.get("doc_path", ""), valid_paths=valid_paths
+        )
     except ValueError as e:
         _stash_form_error(str(e), "edit", link_id)
         return redirect(url_for("dash", edit=link_id))
@@ -758,6 +826,7 @@ def dash_edit(link_id: int):
         url=url,
         description=description,
         section=section,
+        doc_path=doc_path,
         favicon=new_favicon,
     )
     return redirect(url_for("dash"))
@@ -785,6 +854,7 @@ def dash_refresh_favicon(link_id: int):
         url=existing["url"],
         description=existing["description"],
         section=existing["section"],
+        doc_path=existing["doc_path"],
         favicon=fetched,
     )
     return redirect(url_for("dash"))

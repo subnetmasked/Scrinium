@@ -26,8 +26,10 @@
               mode = 'edit',
               values = ev or {'title': editing.title, 'url': editing.url,
                               'description': editing.description,
-                              'section': editing.section},
+                              'section': editing.section,
+                              'doc_path': editing.doc_path},
               sections = sections,
+              doc_paths = doc_paths,
               error = form_error,
               cancel_url = url_for('dash') %}
         {% include "dash_form.html" %}
@@ -44,6 +46,7 @@
               mode = 'new',
               values = (form_values if (form_values and form_values.mode == 'new') else {}),
               sections = sections,
+              doc_paths = doc_paths,
               error = form_error,
               cancel_url = url_for('dash') %}
         {% include "dash_form.html" %}
@@ -58,14 +61,23 @@
         <a href="{{ url_for('dash', new=1) }}">Add your first link →</a>
       </p>
     </article>
+  {% else %}
+    <div class="dash-filter">
+      <input id="dash-filter-input" type="search" autocomplete="off"
+             placeholder="Filter links by title, URL, description, section, or linked doc…"
+             aria-label="Filter dashboard links">
+      <span id="dash-filter-empty" class="muted small" hidden>No links match.</span>
+    </div>
   {% endif %}
 
+  <div id="dash-link-groups">
   {% for group in groups %}
-    <section class="dash-section">
+    <section class="dash-section" data-dash-section data-section-name="{{ group.display_name | lower }}">
       <h2 class="dash-section-title">{{ group.display_name }}</h2>
       <div class="dash-link-grid">
         {% for link in group.links %}
-          <article class="dash-link-card">
+          <article class="dash-link-card" data-dash-card
+                   data-search="{{ (link.title ~ ' ' ~ link.url ~ ' ' ~ link.description ~ ' ' ~ link.section ~ ' ' ~ link.doc_path) | lower }}">
             <a class="dash-link-main" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
               <img class="dash-link-icon" loading="lazy" alt=""
                    src="{{ url_for('dash_favicon', link_id=link.id) }}">
@@ -77,6 +89,13 @@
                 {% endif %}
               </div>
             </a>
+            {% set _doc_url = link.doc_path | docurl %}
+            {% if _doc_url %}
+              <a class="dash-link-doc" href="{{ _doc_url }}"
+                 title="Open linked documentation: {{ link.doc_path }}">
+                Docs: {{ link.doc_path }} →
+              </a>
+            {% endif %}
             <div class="dash-link-tools">
               <a class="dash-link-tool" href="{{ url_for('dash', edit=link.id) }}#edit-form"
                  title="Edit link">Edit</a>
@@ -97,4 +116,30 @@
       </div>
     </section>
   {% endfor %}
+  </div>
+
+  <script>
+    (function () {
+      const input = document.getElementById('dash-filter-input');
+      const empty = document.getElementById('dash-filter-empty');
+      if (!input) return;
+      const sections = document.querySelectorAll('[data-dash-section]');
+      const cards = document.querySelectorAll('[data-dash-card]');
+      function apply() {
+        const q = input.value.trim().toLowerCase();
+        let anyVisible = false;
+        cards.forEach(c => {
+          const hit = !q || c.dataset.search.indexOf(q) !== -1;
+          c.hidden = !hit;
+          if (hit) anyVisible = true;
+        });
+        sections.forEach(s => {
+          const hasVisibleCard = !!s.querySelector('[data-dash-card]:not([hidden])');
+          s.hidden = !hasVisibleCard;
+        });
+        if (empty) empty.hidden = anyVisible;
+      }
+      input.addEventListener('input', apply);
+    })();
+  </script>
 {% endblock %}

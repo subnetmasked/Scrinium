@@ -32,7 +32,8 @@
     </nav>
   </header>
 
-  <div class="layout">
+  <div class="layout{% if hide_sidebar %} layout-full{% endif %}">
+    {% if not hide_sidebar %}
     <aside class="sidebar">
       {% macro render_tree(node) -%}
         <ul class="tree">
@@ -125,9 +126,11 @@
         </section>
       {% endif %}
     </aside>
+    {% endif %}
 
     <main class="content">
       {% block content %}{% endblock %}
+      {% include "_footer.html" %}
     </main>
   </div>
 </body>

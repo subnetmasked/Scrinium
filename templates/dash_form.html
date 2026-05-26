@@ -1,8 +1,9 @@
 {# Inline form used by both "new link" and "edit link" flows. Caller passes:
    - mode: "new" | "edit"
    - action: form post URL
-   - values: dict with title/url/description/section (may be empty)
+   - values: dict with title/url/description/section/doc_path (may be empty)
    - sections: list of existing section names (for the datalist)
+   - doc_paths: list of every valid relative doc/entry path under data/
    - error: optional error string to render at the top of the form
    - cancel_url: where the Cancel button should go
 #}
@@ -32,6 +33,17 @@
            list="dash-sections" maxlength="60" spellcheck="false">
     <datalist id="dash-sections">
       {% for s in sections %}<option value="{{ s }}">{% endfor %}
+    </datalist>
+  </label>
+  <label>
+    <span>Linked documentation
+      <small class="muted">(optional path like <code>servers/web-01</code>)</small>
+    </span>
+    <input name="doc_path" value="{{ values.doc_path or '' }}"
+           list="dash-doc-paths" spellcheck="false" autocomplete="off"
+           placeholder="Start typing a category, entry, or doc path…">
+    <datalist id="dash-doc-paths">
+      {% for p in doc_paths %}<option value="{{ p }}">{% endfor %}
     </datalist>
   </label>
   <div class="form-actions">

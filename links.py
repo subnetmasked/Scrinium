@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS dashboard_links (
     description TEXT NOT NULL DEFAULT '',
     section     TEXT NOT NULL DEFAULT '',
     favicon     TEXT NOT NULL DEFAULT '',
+    doc_path    TEXT NOT NULL DEFAULT '',
     sort_order  INTEGER NOT NULL DEFAULT 0,
     created_by  INTEGER,
     created_at  TEXT NOT NULL,
@@ -43,6 +44,8 @@ CREATE TABLE IF NOT EXISTS dashboard_links (
 );
 CREATE INDEX IF NOT EXISTS idx_dashboard_links_section
     ON dashboard_links(section COLLATE NOCASE, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_dashboard_links_doc_path
+    ON dashboard_links(doc_path COLLATE NOCASE);
 """
 
 
@@ -60,6 +63,19 @@ def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        existing_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(dashboard_links)")
+        }
+        if "doc_path" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE dashboard_links "
+                "ADD COLUMN doc_path TEXT NOT NULL DEFAULT ''"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dashboard_links_doc_path "
+                "ON dashboard_links(doc_path COLLATE NOCASE)"
+            )
 
 
 @contextmanager
@@ -125,6 +141,20 @@ def normalize_description(value: str) -> str:
     return s
 
 
+def normalize_doc_path(value: str, *, valid_paths: set[str]) -> str:
+    """Empty string means 'no linked documentation'. Anything else must
+    appear in `valid_paths` (set of relative paths produced by the caller
+    from DATA_DIR). This keeps file-system probing out of this module."""
+    s = (value or "").strip().strip("/")
+    if not s:
+        return ""
+    if s not in valid_paths:
+        raise ValueError(
+            "Linked documentation path does not exist. Pick one from the list."
+        )
+    return s
+
+
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------
@@ -164,20 +194,21 @@ def create_link(
     description: str,
     section: str,
     favicon: str,
+    doc_path: str,
     created_by: Optional[int],
 ) -> int:
     now = _now()
     with _conn() as c:
         cur = c.execute(
             """INSERT INTO dashboard_links
-               (title, url, description, section, favicon, sort_order,
-                created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?,
+               (title, url, description, section, favicon, doc_path,
+                sort_order, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?,
                        COALESCE((SELECT MAX(sort_order) + 1
                                  FROM dashboard_links WHERE section = ?), 0),
                        ?, ?, ?)""",
-            (title, url, description, section, favicon, section,
-             created_by, now, now),
+            (title, url, description, section, favicon, doc_path,
+             section, created_by, now, now),
         )
         return int(cur.lastrowid)
 
@@ -189,6 +220,7 @@ def update_link(
     url: str,
     description: str,
     section: str,
+    doc_path: str,
     favicon: Optional[str] = None,
 ) -> None:
     now = _now()
@@ -196,23 +228,61 @@ def update_link(
         if favicon is None:
             c.execute(
                 """UPDATE dashboard_links
-                   SET title=?, url=?, description=?, section=?, updated_at=?
+                   SET title=?, url=?, description=?, section=?,
+                       doc_path=?, updated_at=?
                    WHERE id=?""",
-                (title, url, description, section, now, link_id),
+                (title, url, description, section, doc_path, now, link_id),
             )
         else:
             c.execute(
                 """UPDATE dashboard_links
                    SET title=?, url=?, description=?, section=?,
-                       favicon=?, updated_at=?
+                       favicon=?, doc_path=?, updated_at=?
                    WHERE id=?""",
-                (title, url, description, section, favicon, now, link_id),
+                (title, url, description, section, favicon, doc_path,
+                 now, link_id),
             )
 
 
 def delete_link(link_id: int) -> None:
     with _conn() as c:
         c.execute("DELETE FROM dashboard_links WHERE id = ?", (link_id,))
+
+
+def links_for_doc_path(doc_path: str) -> list[sqlite3.Row]:
+    """Return links whose `doc_path` exactly matches the given relative
+    path. Empty input returns no rows."""
+    doc_path = (doc_path or "").strip().strip("/")
+    if not doc_path:
+        return []
+    with _conn() as c:
+        return list(
+            c.execute(
+                "SELECT * FROM dashboard_links "
+                "WHERE doc_path = ? COLLATE NOCASE "
+                "ORDER BY title COLLATE NOCASE",
+                (doc_path,),
+            )
+        )
+
+
+def links_for_doc_prefix(prefix: str) -> list[sqlite3.Row]:
+    """Return links whose `doc_path` lives at or under `prefix`. Used on
+    entry/folder pages so a folder view also surfaces links attached to
+    its child docs."""
+    prefix = (prefix or "").strip().strip("/")
+    if not prefix:
+        return []
+    with _conn() as c:
+        return list(
+            c.execute(
+                "SELECT * FROM dashboard_links "
+                "WHERE doc_path = ? COLLATE NOCASE "
+                "   OR doc_path LIKE ? COLLATE NOCASE "
+                "ORDER BY doc_path COLLATE NOCASE, title COLLATE NOCASE",
+                (prefix, prefix + "/%"),
+            )
+        )
 
 
 def grouped_links() -> list[dict]:
@@ -435,10 +505,13 @@ __all__: Iterable[str] = (
     "update_link",
     "delete_link",
     "grouped_links",
+    "links_for_doc_path",
+    "links_for_doc_prefix",
     "normalize_url",
     "normalize_title",
     "normalize_section",
     "normalize_description",
+    "normalize_doc_path",
     "fetch_favicon",
     "favicon_path",
     "favicon_dir",

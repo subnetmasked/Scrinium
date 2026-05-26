@@ -116,6 +116,15 @@ input:focus, select:focus, textarea:focus {
   min-height: calc(100vh - 53px);
 }
 
+.layout.layout-full {
+  grid-template-columns: 1fr;
+}
+.layout.layout-full .content {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
 .sidebar {
   border-right: 1px solid var(--border);
   background: var(--bg-elev);
@@ -1090,6 +1099,25 @@ body.centered {
 
 .muted { color: var(--text-dim); }
 
+/* ------- site footer ------- */
+
+.site-footer {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.site-footer p { margin: 0; }
+.site-footer a { color: var(--text-dim); }
+.site-footer a:hover { color: var(--accent); }
+
+body.centered .site-footer {
+  margin-top: 1.25rem;
+  border-top: 0;
+  text-align: center;
+}
+
 /* ------- topbar active state ------- */
 
 .actions .btn.active {
@@ -1225,6 +1253,106 @@ body.centered {
 .dash-empty {
   padding: 1.2rem 1rem;
   text-align: center;
+}
+
+.dash-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0 0 1rem;
+}
+.dash-filter input[type="search"] {
+  flex: 1;
+  max-width: 480px;
+}
+
+.dash-link-doc {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  background: var(--bg);
+  border-top: 1px dashed var(--border);
+  padding: 0.4rem 0.85rem;
+  text-decoration: none;
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-link-doc:hover { color: var(--accent); text-decoration: none; }
+
+.dash-link-card {
+  flex-direction: column;
+  align-items: stretch;
+}
+.dash-link-card .dash-link-main { flex: 1; }
+
+/* ------- related links panel (on doc/folder views) ------- */
+
+.related-links {
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.related-links-title {
+  margin: 0 0 0.55rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.related-links-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.45rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.4rem;
+}
+.related-link {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.related-link:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elev-2);
+  text-decoration: none;
+}
+.related-link-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--bg-elev-2);
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+.related-link-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.related-link-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.related-link-host {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ------- pygments codehilite (dark) ------- */
