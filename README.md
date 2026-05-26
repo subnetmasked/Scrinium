@@ -1,26 +1,62 @@
+<div align="center">
+
 # Scrinium
 
-A small, dark-themed, **markdown-native** IT documentation web app.
-Free software (GPL-3.0-or-later) by
-[subnetmasked](https://github.com/subnetmasked).
-Designed to run as a single rootless **Podman** container, gated behind a
-login, with optional **LDAP / Active Directory** authentication.
+**A small, dark-themed, markdown-native IT documentation web app.**
 
-- Plain `.md` files on disk — no database for content, no lock-in.
-- Server-rendered Flask, Pygments syntax highlighting, vanilla CSS/JS.
-- Per-session login, scrypt-hashed local users, optional LDAP bind auth.
-- Admin panel for managing local users, categories, and LDAP.
-- **Home dashboard** at `/`: stats, quick actions, recently-updated docs,
-  recent entries, tag cloud, and an optional pinned `welcome.md` message.
-- **Links dashboard** at `/dash`: shared, wiki-style grid of tool/service
-  bookmarks with auto-fetched favicons. Any signed-in user can add or
-  edit cards.
-- **Categories → entries → docs** sidebar (think Netbox-lite for IT docs)
-  with per-category icons and drag-to-reorder in the admin panel.
-- Per-entry `tags:` line in `overview.md` surfaces as clickable chips that
-  link to a `/t/<tag>` listing.
-- Full-text search with optional per-category scope.
-- CSRF-protected forms; rate-limited login (per-IP + per-username).
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](#running-locally-without-a-container)
+[![Flask](https://img.shields.io/badge/flask-server--rendered-000?logo=flask&logoColor=white)](#)
+[![Podman](https://img.shields.io/badge/podman-rootless-892CA0?logo=podman&logoColor=white)](#first-run)
+[![Made by subnetmasked](https://img.shields.io/badge/made%20by-subnetmasked-1f6feb?logo=github&logoColor=white)](https://github.com/subnetmasked)
+
+Designed to run as a single **rootless Podman** container, gated behind a
+login, with optional **LDAP / Active Directory** authentication.
+Plain `.md` files on disk — no database for content, no lock-in.
+
+[Quick start](#first-run) ·
+[Configuration](#configuration) ·
+[Dashboard](#the-dashboard) ·
+[Fedora deploy](#deploying-on-a-fedora-vm-from-github) ·
+[License](#license)
+
+</div>
+
+---
+
+## Highlights
+
+|                       |                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| **Markdown-native**   | Plain `.md` files on disk — no database for content, no lock-in.                                 |
+| **Server-rendered**   | Flask + Pygments syntax highlighting, vanilla CSS/JS, no SPA.                                    |
+| **Login-gated**       | Per-session login, scrypt-hashed local users, optional LDAP bind auth.                           |
+| **Admin panel**       | Manage local users, categories, and LDAP straight from the UI.                                   |
+| **Home dashboard**    | Stats, quick actions, recently-updated docs, recent entries, tag cloud, and a pinned `welcome.md`. |
+| **Links dashboard**   | Shared, wiki-style grid of tool/service bookmarks with auto-fetched favicons.                    |
+| **Categories tree**   | Netbox-lite sidebar (categories → entries → docs), per-category icons, drag-to-reorder.          |
+| **Tags & search**     | Per-entry `tags:` chips → `/t/<tag>`; full-text search with optional per-category scope.         |
+| **Hardened forms**    | CSRF-protected forms; rate-limited login (per-IP + per-username).                                |
+
+---
+
+## Contents
+
+- [First run](#first-run)
+- [Configuration](#configuration)
+- [Admin panel](#admin-panel)
+- [The dashboard](#the-dashboard)
+- [How docs are organised](#how-docs-are-organised)
+  - [Tags](#tags)
+  - [Search](#search)
+- [LDAP behaviour](#ldap-behaviour)
+- [Security notes](#security-notes)
+- [Running locally without a container](#running-locally-without-a-container)
+- [Deploying on a Fedora VM (from GitHub)](#deploying-on-a-fedora-vm-from-github)
+- [Layout](#layout)
+- [License](#license)
+
+---
 
 ## First run
 
@@ -31,12 +67,15 @@ podman-compose up -d --build
 ```
 
 Open <http://localhost:8080>. The first visit redirects to `/setup` where
-you create the initial administrator account. Subsequent visits go through
-`/login`.
+you create the initial administrator account. Subsequent visits go
+through `/login`.
 
+> [!NOTE]
 > Auth state lives in `./data/.scrinium/auth.db` (SQLite) and the session
 > secret in `./data/.scrinium/secret.key`. Both are kept on the data
 > volume so they persist across rebuilds.
+
+---
 
 ## Configuration
 
@@ -51,24 +90,28 @@ you create the initial administrator account. Subsequent visits go through
 | `SCRINIUM_HTTPS_ONLY`  | `0`                  | `1` to set `Secure` on cookies        |
 | `SCRINIUM_TRUST_PROXY` | `0`                  | `1` if behind a reverse proxy         |
 
+---
+
 ## Admin panel
 
 When signed in as an admin, the topbar shows an **Admin** link.
 
-- **Users**: add local users with username + password, toggle the admin
+- **Users** — add local users with username + password, toggle the admin
   flag, set new passwords, or delete accounts. The last admin cannot be
   demoted or deleted, and you cannot delete yourself.
-- **Categories**: define how the sidebar is organised. Each category has a
-  display name, URL slug, a singular *noun* used in buttons (e.g.
+- **Categories** — define how the sidebar is organised. Each category
+  has a display name, URL slug, a singular *noun* used in buttons (e.g.
   "server"), an icon (picked from a curated set), and an optional
   description. **Drag the cards to reorder** — order is saved instantly
   via XHR; up/down buttons remain for keyboard / no-JS users. Removing a
-  category leaves the on-disk folder intact unless you tick "Also delete
-  data/<slug>/" — it then shows up under **Other**.
-- **LDAP**: enable LDAP, set server URI, optional bind DN/password, search
-  base, user filter (use `{username}` as the placeholder), StartTLS, cert
-  verification, and auto-provisioning of LDAP users on first login. Click
-  **Test connection** to verify before saving.
+  category leaves the on-disk folder intact unless you tick *"Also
+  delete `data/<slug>/`"* — it then shows up under **Other**.
+- **LDAP** — enable LDAP, set server URI, optional bind DN/password,
+  search base, user filter (use `{username}` as the placeholder),
+  StartTLS, cert verification, and auto-provisioning of LDAP users on
+  first login. Click **Test connection** to verify before saving.
+
+---
 
 ## The dashboard
 
@@ -78,21 +121,24 @@ When signed in as an admin, the topbar shows an **Admin** link.
   entries, tags, categories).
 - Quick-action buttons: `+ New doc`, plus `+ <Noun>` for the first three
   categories.
-- **Categories**: every category with its icon, entry count, doc count,
+- **Categories** — every category with its icon, entry count, doc count,
   and a `+` to add a new entry.
-- **Recently updated**: the most recently edited markdown files, with
+- **Recently updated** — the most recently edited markdown files, with
   their location (e.g. *Servers · web-01*) and a relative timestamp
   ("2h ago", "yesterday", "3d ago").
-- **Recent entries**: the most recently created entries, with the tags
+- **Recent entries** — the most recently created entries, with the tags
   parsed out of their overview.
-- **Tag cloud**: every tag in use, with click-through to `/t/<tag>` and
+- **Tag cloud** — every tag in use, with click-through to `/t/<tag>` and
   a count.
-- **Pinned welcome**: if `data/welcome.md` exists, it's rendered at the
+- **Pinned welcome** — if `data/welcome.md` exists, it's rendered at the
   bottom with an *Edit* link. Admins also see a hint for creating one
   if it doesn't exist.
 
-Click any tag chip anywhere in the app to jump to `/t/<tag>` — a listing
-of every entry tagged with it.
+> [!TIP]
+> Click any tag chip anywhere in the app to jump to `/t/<tag>` — a
+> listing of every entry tagged with it.
+
+---
 
 ## How docs are organised
 
@@ -101,24 +147,24 @@ The sidebar groups your markdown into four bands:
 - **Loose documents** — any `.md` directly under `data/` (e.g.
   `welcome.md`). Good for quick notes that don't belong anywhere.
 - **Categories** — admin-defined sections. The defaults are *Servers*,
-  *Applications*, and *Network*, each backed by a folder of the same slug
-  under `data/`.
+  *Applications*, and *Network*, each backed by a folder of the same
+  slug under `data/`.
 - **Entries** — folders one level inside a category, e.g.
   `data/servers/web-01/`. Each entry is its own page (rendered from
   `overview.md`) with as many extra `.md` files as you like.
 - **Other** — any other top-level folder that doesn't match a category
   slug.
 
-Workflow:
+**Workflow**
 
 - **Admins** define the categories.
-- **Anyone signed in** can use the `+` next to a category title to add a
-  new entry (e.g. a new server). The form takes a name, optional
+- **Anyone signed in** can use the `+` next to a category title to add
+  a new entry (e.g. a new server). The form takes a name, optional
   comma-separated **tags**, and a description. Scrinium creates
-  `data/<slug>/<name>/overview.md` with a `tags:` frontmatter line and a
-  starter heading.
-- Inside an entry, hit `+ Add doc` to drop more documents (`runbook.md`,
-  `incident-2024-03.md`, etc.) next to the overview.
+  `data/<slug>/<name>/overview.md` with a `tags:` frontmatter line and
+  a starter heading.
+- Inside an entry, hit `+ Add doc` to drop more documents
+  (`runbook.md`, `incident-2024-03.md`, etc.) next to the overview.
 
 ### Tags
 
@@ -131,8 +177,8 @@ tags: prod, web, nginx
 
 …will display those tags as chips on the category landing page tile and
 above the rendered overview. The line is matched within the first ~25
-lines of the file. Both commas and semicolons separate tags; leading `#`
-is stripped.
+lines of the file. Both commas and semicolons separate tags; leading
+`#` is stripped.
 
 ### Search
 
@@ -141,31 +187,45 @@ page also has a scope dropdown — pick *All documents* or any category
 to limit results. Inside a category landing page there's a quick
 **Search ‹Category› →** link in the heading.
 
-Categories are stored as JSON at `data/.scrinium/categories.json` —
-edit it directly if you prefer git-tracked config.
+> [!NOTE]
+> Categories are stored as JSON at `data/.scrinium/categories.json` —
+> edit it directly if you prefer git-tracked config.
+
+---
 
 ## LDAP behaviour
 
-- Login flow:
-  1. If the username matches a local user, only the local password is checked.
-  2. If the username matches a known LDAP user, only LDAP is checked.
-  3. If the username is unknown and LDAP auto-provision is on, the user is
-     created on first successful LDAP bind (as a non-admin).
-- Promote an LDAP user to admin from the Users tab; their password is still
-  managed by your directory.
+Login flow:
+
+1. If the username matches a local user, only the local password is
+   checked.
+2. If the username matches a known LDAP user, only LDAP is checked.
+3. If the username is unknown and LDAP auto-provision is on, the user
+   is created on first successful LDAP bind (as a non-admin).
+
+Promote an LDAP user to admin from the Users tab; their password is
+still managed by your directory.
+
+---
 
 ## Security notes
+
+> [!IMPORTANT]
+> Treat the `data/` volume as a secret — it holds the auth DB, the
+> session secret, and any LDAP bind password.
 
 - Sessions are signed with `SECRET_KEY` (HttpOnly, SameSite=Lax). Set
   `SCRINIUM_HTTPS_ONLY=1` once you put TLS in front to enable `Secure`.
 - All state-changing forms carry a CSRF token; the markdown preview API
   uses an `X-CSRF-Token` header.
-- 8 failed login attempts per (IP, username) within 5 minutes locks out
-  for the rest of the window. Restarts reset the counter.
-- LDAP bind passwords are stored in the local SQLite DB. Treat the volume
-  as a secret. Use `chmod 700 data/.scrinium` on the host if you bind-mount.
-- For real exposure put Scrinium behind a TLS terminator
-  (Caddy, nginx, Traefik, …) and set `SCRINIUM_TRUST_PROXY=1`.
+- 8 failed login attempts per (IP, username) within 5 minutes locks
+  out for the rest of the window. Restarts reset the counter.
+- LDAP bind passwords are stored in the local SQLite DB. Use
+  `chmod 700 data/.scrinium` on the host if you bind-mount.
+- For real exposure put Scrinium behind a TLS terminator (Caddy, nginx,
+  Traefik, …) and set `SCRINIUM_TRUST_PROXY=1`.
+
+---
 
 ## Running locally without a container
 
@@ -175,11 +235,16 @@ pip install -r requirements.txt
 SCRINIUM_DATA=./data python app.py
 ```
 
+---
+
 ## Deploying on a Fedora VM (from GitHub)
 
 End-to-end walkthrough for cloning Scrinium from GitHub onto a fresh
 Fedora VM (Server or Workstation, F39+) and running it as a rootless
 Podman service that survives reboots.
+
+<details>
+<summary><strong>Show full step-by-step walkthrough</strong> (steps 1–11)</summary>
 
 ### 1. Provision the VM
 
@@ -200,6 +265,7 @@ podman --version          # 4.x or newer
 podman-compose --version
 ```
 
+> [!TIP]
 > If `podman-compose` isn't packaged on your release, fall back to
 > `pip install --user podman-compose`.
 
@@ -223,8 +289,8 @@ cd ~/scrinium
 mkdir -p data
 ```
 
-(`data/` is gitignored — it's where the live documentation, auth DB,
-session secret, and `categories.json` will be written.)
+`data/` is gitignored — it's where the live documentation, auth DB,
+session secret, and `categories.json` will be written.
 
 ### 5. (Optional) tune `compose.yaml` for production
 
@@ -314,9 +380,9 @@ belt-and-braces protection.
 
 ### 11. TLS with the bundled nginx (recommended)
 
-`compose.yaml` ships with an nginx sidecar that terminates TLS in front of
-Scrinium. All deployment-specific values live in a `.env` file at the
-project root — nothing is hardcoded in the repo.
+`compose.yaml` ships with an nginx sidecar that terminates TLS in front
+of Scrinium. All deployment-specific values live in a `.env` file at
+the project root — nothing is hardcoded in the repo.
 
 ```bash
 cp .env.example .env
@@ -324,22 +390,23 @@ $EDITOR .env       # set SCRINIUM_DOMAIN, point SCRINIUM_TLS_HOST_DIR at
                    # your cert directory, etc.
 ```
 
-Drop your certificate files at the paths referenced in `.env`. By default
-the nginx container expects:
+Drop your certificate files at the paths referenced in `.env`. By
+default the nginx container expects:
 
 - `${SCRINIUM_TLS_HOST_DIR}/fullchain.pem`
 - `${SCRINIUM_TLS_HOST_DIR}/privkey.pem`
 
-For rootless Podman, the Linux user running `podman-compose` must be able
-to read both files. If you store certs under `/etc/ssl/...`, either make
-that directory owned by the deploy user or grant that user read access to
-`privkey.pem`; a `root:root` private key with mode `600` will not be
-readable from the rootless nginx container.
+> [!WARNING]
+> For rootless Podman, the Linux user running `podman-compose` must be
+> able to read both files. If you store certs under `/etc/ssl/...`,
+> either make that directory owned by the deploy user or grant that
+> user read access to `privkey.pem`. A `root:root` private key with
+> mode `600` will **not** be readable from the rootless nginx container.
 
-By default, the compose file publishes nginx on `8080` and `8443` because
-rootless Podman cannot bind host ports below 1024 on a stock Linux host.
-For a production hostname on normal HTTPS (`https://docs.example.com/`),
-either:
+By default, the compose file publishes nginx on `8080` and `8443`
+because rootless Podman cannot bind host ports below 1024 on a stock
+Linux host. For a production hostname on normal HTTPS
+(`https://docs.example.com/`), either:
 
 - allow rootless low-port binds once on the host, then set
   `SCRINIUM_HTTP_PORT=80` and `SCRINIUM_HTTPS_PORT=443` in `.env`:
@@ -353,7 +420,7 @@ either:
 - or keep Scrinium on `8080`/`8443` and put an existing privileged host
   reverse proxy/firewall rule in front of it.
 
-Three common sources:
+Three common sources for the certificate:
 
 - **Existing wildcard cert** — set `SCRINIUM_TLS_HOST_DIR` to wherever
   it already lives on the host (e.g. `/etc/ssl/mycorp-wildcard`).
@@ -361,8 +428,12 @@ Three common sources:
   `/etc/letsencrypt/live/<domain>` and run renewals on the host with
   `certbot renew --deploy-hook 'podman exec scrinium-nginx nginx -s reload'`.
 - **Self-signed (lab only)** —
-  `openssl req -x509 -newkey rsa:2048 -keyout nginx/certs/privkey.pem \
-   -out nginx/certs/fullchain.pem -days 365 -nodes -subj "/CN=$SCRINIUM_DOMAIN"`.
+  ```bash
+  openssl req -x509 -newkey rsa:2048 \
+    -keyout nginx/certs/privkey.pem \
+    -out    nginx/certs/fullchain.pem \
+    -days 365 -nodes -subj "/CN=$SCRINIUM_DOMAIN"
+  ```
 
 Then bring it up:
 
@@ -374,10 +445,15 @@ The nginx container expands `nginx/scrinium.conf.template` with the env
 vars at startup, so changing `.env` and restarting nginx is enough to
 re-roll the TLS config — no editing of committed files.
 
+> [!NOTE]
 > Prefer a different TLS solution (Caddy, Traefik, an existing nginx on
 > the host)? Comment out the `nginx` service in `compose.yaml`, change
 > the `scrinium` service to publish `ports: ["8080:8080"]`, and point
 > your existing terminator at it.
+
+</details>
+
+---
 
 ## Layout
 
@@ -398,14 +474,15 @@ re-roll the TLS config — no editing of committed files.
 └── requirements.txt
 ```
 
+---
+
 ## License
 
 Scrinium is **free software** licensed under the
 [GNU General Public License v3.0 or later](LICENSE) (GPL-3.0-or-later).
 
-Copyright © 2026 [subnetmasked](https://github.com/subnetmasked).
+You may use, study, modify, and redistribute this program under the
+terms of the GPL. See the [LICENSE](LICENSE) file for the full text.
 
-You may use, study, modify, and redistribute this program under the terms of
-the GPL. See the [LICENSE](LICENSE) file for the full text.
-
-Source: [github.com/subnetmasked/Scrinium](https://github.com/subnetmasked/Scrinium)
+<sub>Copyright © 2026 [subnetmasked](https://github.com/subnetmasked) ·
+Source: [github.com/subnetmasked/Scrinium](https://github.com/subnetmasked/Scrinium)</sub>
