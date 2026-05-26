@@ -30,4 +30,4 @@ services:
       SCRINIUM_TLS_KEY: ${SCRINIUM_TLS_KEY:-/etc/ssl/scrinium/privkey.pem}
     volumes:
       - ./nginx/scrinium.conf.template:/etc/nginx/templates/scrinium.conf.template:ro,Z
-      - ${SCRINIUM_TLS_HOST_DIR:-./nginx/certs}:/etc/ssl/scrinium:ro,Z
+      - ${SCRINIUM_TLS_HOST_DIR:-./nginx/certs}:/etc/ssl/scrinium:ro
