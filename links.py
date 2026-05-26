@@ -44,8 +44,6 @@ CREATE TABLE IF NOT EXISTS dashboard_links (
 );
 CREATE INDEX IF NOT EXISTS idx_dashboard_links_section
     ON dashboard_links(section COLLATE NOCASE, sort_order, id);
-CREATE INDEX IF NOT EXISTS idx_dashboard_links_doc_path
-    ON dashboard_links(doc_path COLLATE NOCASE);
 """
 
 
@@ -72,10 +70,10 @@ def init_db(db_path: Path) -> None:
                 "ALTER TABLE dashboard_links "
                 "ADD COLUMN doc_path TEXT NOT NULL DEFAULT ''"
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_dashboard_links_doc_path "
-                "ON dashboard_links(doc_path COLLATE NOCASE)"
-            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dashboard_links_doc_path "
+            "ON dashboard_links(doc_path COLLATE NOCASE)"
+        )
 
 
 @contextmanager
