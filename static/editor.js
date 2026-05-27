@@ -7,6 +7,7 @@
   const fileInput = document.getElementById("image-input");
   const fmBtn = document.getElementById("insert-fm");
   const fmTpl = document.getElementById("fm-template-data");
+  const wikiBtn = document.getElementById("wrap-wikilink");
   if (!ta) return;
 
   const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
@@ -55,6 +56,48 @@
     ta.focus();
   }
 
+  function wrapWikilinkAtSelection() {
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const selected = ta.value.slice(start, end);
+
+    // Toggle: if the selection is already surrounded by [[ ]], strip it.
+    const before2 = ta.value.slice(Math.max(0, start - 2), start);
+    const after2 = ta.value.slice(end, end + 2);
+    if (before2 === "[[" && after2 === "]]") {
+      ta.value =
+        ta.value.slice(0, start - 2) + selected + ta.value.slice(end + 2);
+      ta.selectionStart = start - 2;
+      ta.selectionEnd = end - 2;
+      ta.focus();
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+
+    if (!selected) {
+      const inserted = "[[]]";
+      ta.value = ta.value.slice(0, start) + inserted + ta.value.slice(end);
+      ta.selectionStart = ta.selectionEnd = start + 2;
+      ta.focus();
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+
+    // Wikilinks are single-line tokens; collapse internal whitespace so a
+    // selection spanning a soft-wrapped line still yields a valid target.
+    const flat = selected.replace(/\s*\n\s*/g, " ").trim();
+    if (!flat) {
+      ta.focus();
+      return;
+    }
+    const wrapped = `[[${flat}]]`;
+    ta.value = ta.value.slice(0, start) + wrapped + ta.value.slice(end);
+    ta.selectionStart = start + 2;
+    ta.selectionEnd = start + 2 + flat.length;
+    ta.focus();
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
   async function uploadBlob(blob, filename, pasted) {
     const fd = new FormData();
     fd.append("file", blob, filename || "image.png");
@@ -98,6 +141,10 @@
       e.preventDefault();
       form.submit();
     }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      wrapWikilinkAtSelection();
+    }
   });
 
   ta.addEventListener("paste", (e) => {
@@ -129,6 +176,7 @@
   });
 
   fmBtn?.addEventListener("click", insertFrontmatter);
+  wikiBtn?.addEventListener("click", wrapWikilinkAtSelection);
   ta.addEventListener("input", syncFmButton);
 
   pickBtn?.addEventListener("click", () => fileInput?.click());

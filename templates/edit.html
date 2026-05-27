@@ -17,6 +17,8 @@
       <button class="btn" type="button" id="insert-fm"
               title="Insert YAML frontmatter at the top of the document"
               {% if has_frontmatter %}hidden{% endif %}>+ Metadata</button>
+      <button class="btn" type="button" id="wrap-wikilink"
+              title="Wrap selection in [[ ]] to make a wikilink (Ctrl+K)">[[ ]]</button>
       <button class="btn" type="button" id="pick-image">+ Image</button>
       <input type="file" id="image-input" accept="image/*" multiple hidden>
       <button class="btn" type="button" id="toggle-preview">Preview</button>
