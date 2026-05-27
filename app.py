@@ -301,6 +301,28 @@ def _infobox_fm(target: Path, parsed_fm: dict[str, Any], rel: str) -> dict[str, 
     return fm
 
 
+def _doc_or_folder_url(rel: str) -> str:
+    """Pick ``/d/<rel>`` for markdown docs and ``/f/<rel>`` for folder /
+    entry targets, given a relative path under ``DATA_DIR``. Returns an
+    empty string when ``rel`` is empty, escapes the data dir, or no
+    matching doc/folder exists on disk."""
+    rel = (rel or "").strip().strip("/")
+    if not rel:
+        return ""
+    try:
+        target_dir = (DATA_DIR / rel).resolve()
+        target_md = (DATA_DIR / (rel + MD_EXT)).resolve()
+    except (OSError, ValueError):
+        return ""
+    if target_dir != DATA_DIR and DATA_DIR not in target_dir.parents:
+        return ""
+    if target_md.is_file():
+        return url_for("view", path=rel)
+    if target_dir.is_dir():
+        return url_for("folder", path=rel)
+    return ""
+
+
 def render_markdown(body: str, doc_rel_path: str) -> str:
     paths = set(all_doc_paths())
 
@@ -312,6 +334,7 @@ def render_markdown(body: str, doc_rel_path: str) -> str:
         all_paths=paths,
         resolve_wikilink=nav.resolve_wikilink,
         attachment_url=_attach_url,
+        wikilink_url=_doc_or_folder_url,
     )
     try:
         md_renderer.reset()
@@ -500,21 +523,7 @@ def _jinja_docurl(rel):
     """Return the right URL for a stored doc_path: /d/<rel> if it's a
     markdown file under data/, otherwise /f/<rel>. Empty input yields
     an empty string so templates can guard with `{% if ... %}`."""
-    rel = (rel or "").strip().strip("/")
-    if not rel:
-        return ""
-    try:
-        target_dir = (DATA_DIR / rel).resolve()
-        target_md = (DATA_DIR / (rel + MD_EXT)).resolve()
-    except (OSError, ValueError):
-        return ""
-    if target_dir != DATA_DIR and DATA_DIR not in target_dir.parents:
-        return ""
-    if target_md.is_file():
-        return url_for("view", path=rel)
-    if target_dir.is_dir():
-        return url_for("folder", path=rel)
-    return ""
+    return _doc_or_folder_url(rel)
 
 
 @app.template_filter("fm_value")

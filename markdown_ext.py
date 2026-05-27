@@ -20,6 +20,11 @@ class RenderContext:
     all_paths: set[str] = set()
     resolve_wikilink: Optional[Callable[[str, set[str]], dict]] = None
     attachment_url: Optional[Callable[[str, str], str]] = None
+    # Maps a resolved rel (e.g. ``servers/web-01``) to the correct
+    # in-app URL. The host application supplies this so wikilinks can
+    # route to ``/d/<rel>`` for markdown docs and ``/f/<rel>`` for
+    # folder/entry targets without this module knowing about Flask.
+    wikilink_url: Optional[Callable[[str], str]] = None
 
 
 _ctx = RenderContext()
@@ -31,11 +36,13 @@ def set_render_context(
     all_paths: set[str],
     resolve_wikilink: Callable[[str, set[str]], dict],
     attachment_url: Callable[[str, str], str],
+    wikilink_url: Optional[Callable[[str], str]] = None,
 ) -> None:
     _ctx.doc_rel = doc_rel
     _ctx.all_paths = all_paths
     _ctx.resolve_wikilink = resolve_wikilink
     _ctx.attachment_url = attachment_url
+    _ctx.wikilink_url = wikilink_url
 
 
 def clear_render_context() -> None:
@@ -43,6 +50,7 @@ def clear_render_context() -> None:
     _ctx.all_paths = set()
     _ctx.resolve_wikilink = None
     _ctx.attachment_url = None
+    _ctx.wikilink_url = None
 
 
 class WikiLinkProcessor(InlineProcessor):
@@ -63,11 +71,22 @@ class WikiLinkProcessor(InlineProcessor):
         if _ctx.doc_rel and "/" in _ctx.doc_rel:
             folder = _ctx.doc_rel.rsplit("/", 1)[0]
 
+        def _href_for(resolved_rel: str) -> str:
+            url_fn = _ctx.wikilink_url
+            if url_fn:
+                try:
+                    url = url_fn(resolved_rel)
+                except Exception:
+                    url = ""
+                if url:
+                    return url
+            return f"/d/{quote(resolved_rel, safe='/')}"
+
         if status == "resolved" and rel:
-            href = f"/d/{quote(rel, safe='/')}"
+            href = _href_for(rel)
             html = f'<a class="wiki-link" href="{href}">{display}</a>'
         elif status == "ambiguous" and rel:
-            href = f"/d/{quote(rel, safe='/')}"
+            href = _href_for(rel)
             title = result.get("title", "Multiple matches")
             html = (
                 f'<a class="wiki-link wiki-ambiguous" href="{href}" '
