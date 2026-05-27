@@ -90,10 +90,25 @@ def _normalize_link_target(raw: str, source_rel: str) -> str:
 
 
 def _resolve_target(target: str, all_paths: set[str]) -> Optional[str]:
+    """Resolve a wikilink/markdown-link target to the canonical path
+    (the exact-case spelling that appears in ``all_paths``). Returns
+    ``None`` when the target cannot be resolved."""
     result = nav.resolve_wikilink(target, all_paths)
-    if result.get("status") in {"resolved", "ambiguous"}:
-        return result.get("rel")
-    return None
+    if result.get("status") not in {"resolved", "ambiguous"}:
+        return None
+    rel = result.get("rel") or ""
+    if not rel:
+        return None
+    if rel in all_paths:
+        return rel
+    # Defence in depth: force canonical case from all_paths even if the
+    # resolver returned a differently-cased string (shouldn't happen with
+    # the current resolver, but keeps the index keys stable).
+    rel_lower = rel.lower()
+    for p in all_paths:
+        if p.lower() == rel_lower:
+            return p
+    return rel
 
 
 def _snippet(text: str, needle: str, width: int = 120) -> str:
@@ -164,8 +179,21 @@ def _ensure_scan(data_dir: Path, all_paths: set[str]) -> None:
     if _CACHE.get("key") == key and _CACHE.get("mtime") == mtime:
         return
     reverse = _scan(data_dir, all_paths)
+    # Lower-case mirror of the reverse index so lookups by ``doc_rel``
+    # work regardless of which case the caller (URL path, sidebar link,
+    # category page, etc.) happens to use. Wikilinks like ``[[foo]]`` and
+    # ``[[FOO]]`` already resolve to the same canonical key during the
+    # scan; this guarantees the retrieval side is just as forgiving.
+    reverse_lower = {k.lower(): v for k, v in reverse.items()}
     _CACHE.clear()
-    _CACHE.update({"key": key, "mtime": mtime, "reverse": reverse})
+    _CACHE.update(
+        {
+            "key": key,
+            "mtime": mtime,
+            "reverse": reverse,
+            "reverse_lower": reverse_lower,
+        }
+    )
 
 
 def build_index(data_dir: Path, all_paths: set[str]) -> dict[str, list[Backlink]]:
@@ -174,7 +202,16 @@ def build_index(data_dir: Path, all_paths: set[str]) -> dict[str, list[Backlink]
 
 
 def backlinks_for(data_dir: Path, all_paths: set[str], doc_rel: str) -> list[Backlink]:
-    return build_index(data_dir, all_paths).get(doc_rel, [])
+    """Return backlinks targeting ``doc_rel``. The lookup is
+    case-insensitive: ``[[Nextcloud01]]`` and ``[[nextcloud01]]`` resolve
+    to the same canonical key, and so does the path used here."""
+    _ensure_scan(data_dir, all_paths)
+    reverse: dict[str, list[Backlink]] = _CACHE["reverse"]
+    direct = reverse.get(doc_rel)
+    if direct is not None:
+        return direct
+    reverse_lower: dict[str, list[Backlink]] = _CACHE["reverse_lower"]
+    return reverse_lower.get((doc_rel or "").lower(), [])
 
 
 __all__ = (
