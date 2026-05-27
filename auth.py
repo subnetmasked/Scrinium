@@ -53,6 +53,16 @@ def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        migrate_db(conn)
+
+
+def migrate_db(conn: sqlite3.Connection) -> None:
+    """Opportunistic schema upgrades for existing installs."""
+    have = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+    if "theme" not in have:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'system'"
+        )
 
 
 @contextmanager
@@ -141,6 +151,38 @@ def touch_login(user_id: int) -> None:
         c.execute("UPDATE users SET last_login = ? WHERE id = ?", (now, user_id))
 
 
+VALID_THEMES = frozenset({"dark", "light", "system"})
+
+
+def get_user_prefs(user_id: int) -> dict:
+    user = get_user(user_id)
+    if user is None:
+        return {"theme": "system"}
+    theme = (user["theme"] if "theme" in user.keys() else None) or "system"
+    if theme not in VALID_THEMES:
+        theme = "system"
+    return {"theme": theme}
+
+
+def set_user_prefs(user_id: int, **kwargs) -> None:
+    updates: list[str] = []
+    values: list[object] = []
+    if "theme" in kwargs:
+        theme = kwargs["theme"]
+        if theme not in VALID_THEMES:
+            raise ValueError("Invalid theme.")
+        updates.append("theme = ?")
+        values.append(theme)
+    if not updates:
+        return
+    values.append(user_id)
+    with _conn() as c:
+        c.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+            tuple(values),
+        )
+
+
 # ---------------------------------------------------------------------------
 # config (LDAP) storage
 # ---------------------------------------------------------------------------
@@ -193,6 +235,113 @@ def ldap_settings(redact: bool = False) -> dict:
             if settings.get(k):
                 settings[k] = "********"
     return settings
+
+
+# ---------------------------------------------------------------------------
+# site appearance & feature flags
+# ---------------------------------------------------------------------------
+
+
+APPEARANCE_DEFAULTS: dict = {
+    "sans_font": "system",
+    "mono_font": "system",
+    "default_theme": "system",
+    "site_name": "",
+}
+
+FEATURE_DEFAULTS: dict = {
+    "code_copy": True,
+    "code_linenos": False,
+    "wiki_broken_warn": False,
+    "compact_density": False,
+    "show_tag_cloud": True,
+}
+
+FONT_CHOICES_SANS: dict[str, str] = {
+    "system": "System default",
+    "inter": "Inter",
+    "ibm-plex-sans": "IBM Plex Sans",
+}
+
+FONT_CHOICES_MONO: dict[str, str] = {
+    "system": "System default",
+    "jetbrains-nerd": "JetBrains Mono Nerd Font",
+    "fira-nerd": "FiraCode Nerd Font",
+    "ibm-plex-mono": "IBM Plex Mono",
+}
+
+FONT_CSS_STACKS: dict[str, dict[str, str]] = {
+    "sans": {
+        "system": 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        "inter": '"Inter", system-ui, sans-serif',
+        "ibm-plex-sans": '"IBM Plex Sans", system-ui, sans-serif',
+    },
+    "mono": {
+        "system": 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        "jetbrains-nerd": '"JetBrainsMono Nerd Font", ui-monospace, monospace',
+        "fira-nerd": '"FiraCode Nerd Font", ui-monospace, monospace',
+        "ibm-plex-mono": '"IBM Plex Mono", ui-monospace, monospace',
+    },
+}
+
+
+def appearance_settings() -> dict:
+    saved = get_config("appearance") or {}
+    out = dict(APPEARANCE_DEFAULTS)
+    out.update(saved)
+    if out.get("default_theme") not in VALID_THEMES:
+        out["default_theme"] = "system"
+    if out.get("sans_font") not in FONT_CHOICES_SANS:
+        out["sans_font"] = "system"
+    if out.get("mono_font") not in FONT_CHOICES_MONO:
+        out["mono_font"] = "system"
+    return out
+
+
+def save_appearance_settings(form: dict) -> None:
+    cleaned = dict(APPEARANCE_DEFAULTS)
+    cleaned["sans_font"] = (form.get("sans_font") or "system").strip()
+    cleaned["mono_font"] = (form.get("mono_font") or "system").strip()
+    cleaned["default_theme"] = (form.get("default_theme") or "system").strip()
+    cleaned["site_name"] = (form.get("site_name") or "").strip()
+    if cleaned["sans_font"] not in FONT_CHOICES_SANS:
+        cleaned["sans_font"] = "system"
+    if cleaned["mono_font"] not in FONT_CHOICES_MONO:
+        cleaned["mono_font"] = "system"
+    if cleaned["default_theme"] not in VALID_THEMES:
+        cleaned["default_theme"] = "system"
+    set_config("appearance", cleaned)
+
+
+def feature_flags() -> dict:
+    saved = get_config("features") or {}
+    out = dict(FEATURE_DEFAULTS)
+    out.update(saved)
+    for key in FEATURE_DEFAULTS:
+        out[key] = bool(out.get(key))
+    return out
+
+
+def save_feature_flags(form: dict) -> None:
+    cleaned = {
+        key: bool(form.get(key)) for key in FEATURE_DEFAULTS
+    }
+    set_config("features", cleaned)
+
+
+def font_css_variables(appearance: Optional[dict] = None) -> str:
+    """Return a :root { --sans; --mono; } block for inline injection."""
+    app = appearance or appearance_settings()
+    sans_key = app.get("sans_font") or "system"
+    mono_key = app.get("mono_font") or "system"
+    sans = FONT_CSS_STACKS["sans"].get(sans_key, FONT_CSS_STACKS["sans"]["system"])
+    mono = FONT_CSS_STACKS["mono"].get(mono_key, FONT_CSS_STACKS["mono"]["system"])
+    return f":root {{ --sans: {sans}; --mono: {mono}; }}"
+
+
+def effective_site_name(env_default: str) -> str:
+    name = (appearance_settings().get("site_name") or "").strip()
+    return name or env_default
 
 
 def save_ldap_settings(form: dict, *, keep_existing_password: bool = True) -> None:
@@ -550,6 +699,7 @@ def require_username(value: str) -> str:
 
 __all__: Iterable[str] = (
     "init_db",
+    "migrate_db",
     "list_users",
     "get_user",
     "get_user_by_name",
@@ -579,4 +729,17 @@ __all__: Iterable[str] = (
     "safe_next",
     "require_password",
     "require_username",
+    "get_user_prefs",
+    "set_user_prefs",
+    "VALID_THEMES",
+    "appearance_settings",
+    "save_appearance_settings",
+    "feature_flags",
+    "save_feature_flags",
+    "font_css_variables",
+    "effective_site_name",
+    "FONT_CHOICES_SANS",
+    "FONT_CHOICES_MONO",
+    "APPEARANCE_DEFAULTS",
+    "FEATURE_DEFAULTS",
 )

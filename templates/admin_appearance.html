@@ -1,0 +1,92 @@
+{% extends "admin_base.html" %}
+{% block title %}Appearance — Admin — {{ site_name }}{% endblock %}
+{% block admin_body %}
+  <header class="adm-header">
+    <div>
+      <h1>Appearance</h1>
+      <p class="adm-help muted">Site-wide fonts, default theme, and quality-of-life toggles.</p>
+    </div>
+  </header>
+
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
+
+  <form method="post" action="{{ url_for('admin_appearance') }}" class="form adm-card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <section class="adm-section">
+      <h2>Typography</h2>
+      <div class="form-row">
+        <label>
+          <span>Sans-serif font</span>
+          <select name="sans_font">
+            {% for key, label in sans_choices.items() %}
+              <option value="{{ key }}"{% if appearance.sans_font == key %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Monospace font</span>
+          <select name="mono_font">
+            {% for key, label in mono_choices.items() %}
+              <option value="{{ key }}"{% if appearance.mono_font == key %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <p class="adm-help muted small">
+        Nerd Font choices include icon glyphs useful in code blocks and terminal snippets.
+        Fonts are bundled — no outbound network requests.
+      </p>
+    </section>
+
+    <section class="adm-section">
+      <h2>Branding</h2>
+      <div class="form-row">
+        <label>
+          <span>Site name</span>
+          <input name="site_name" value="{{ appearance.site_name or '' }}"
+                 placeholder="Leave empty to use SCRINIUM_SITE_NAME env">
+        </label>
+        <label>
+          <span>Default theme for new users</span>
+          <select name="default_theme">
+            {% for value, label in [('dark', 'Dark'), ('light', 'Light'), ('system', 'System')] %}
+              <option value="{{ value }}"{% if appearance.default_theme == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="adm-section">
+      <h2>Features</h2>
+      <div class="checkbox-grid">
+        <label class="inline">
+          <input type="checkbox" name="code_copy" value="1"{% if features.code_copy %} checked{% endif %}>
+          One-click copy on code blocks
+        </label>
+        <label class="inline">
+          <input type="checkbox" name="code_linenos" value="1"{% if features.code_linenos %} checked{% endif %}>
+          Line numbers in code blocks
+        </label>
+        <label class="inline">
+          <input type="checkbox" name="wiki_broken_warn" value="1"{% if features.wiki_broken_warn %} checked{% endif %}>
+          Highlight broken wikilinks in editor preview
+        </label>
+        <label class="inline">
+          <input type="checkbox" name="compact_density" value="1"{% if features.compact_density %} checked{% endif %}>
+          Compact layout (tighter spacing)
+        </label>
+        <label class="inline">
+          <input type="checkbox" name="show_tag_cloud" value="1"{% if features.show_tag_cloud %} checked{% endif %}>
+          Show tag cloud on home dashboard
+        </label>
+      </div>
+    </section>
+
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Save settings</button>
+    </div>
+  </form>
+{% endblock %}

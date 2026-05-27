@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Settings — {{ site_name }}{% endblock %}
+{% block content %}
+  <article class="doc-body settings-page">
+    <h1>Settings</h1>
+    <p class="muted">Personal preferences for your account.</p>
+
+    {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+    {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
+
+    <section class="adm-section">
+      <h2>Appearance</h2>
+      <p class="adm-help muted">Choose how Scrinium looks on your device.</p>
+      <form method="post" action="{{ url_for('settings') }}" class="form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="section" value="appearance">
+        <fieldset class="radio-group">
+          <legend class="sr-only">Theme</legend>
+          {% for value, label in [('dark', 'Dark'), ('light', 'Light'), ('system', 'System')] %}
+            <label class="inline">
+              <input type="radio" name="theme" value="{{ value }}"
+                     {% if prefs.theme == value %}checked{% endif %}>
+              {{ label }}
+            </label>
+          {% endfor %}
+        </fieldset>
+        <div class="form-actions">
+          <button class="btn primary" type="submit">Save appearance</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="adm-section">
+      <h2>Account</h2>
+      {% if current_user.source == 'local' %}
+        <p class="adm-help muted">Change your local Scrinium password.</p>
+        <form method="post" action="{{ url_for('settings') }}" class="form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="section" value="password">
+          <label>
+            <span>New password</span>
+            <input name="password" type="password" required minlength="8" autocomplete="new-password">
+          </label>
+          <label>
+            <span>Confirm password</span>
+            <input name="confirm" type="password" required minlength="8" autocomplete="new-password">
+          </label>
+          <div class="form-actions">
+            <button class="btn primary" type="submit">Update password</button>
+          </div>
+        </form>
+      {% else %}
+        <p class="adm-help muted">
+          Your password is managed by your directory ({{ current_user.source }}).
+          Contact your administrator to change it.
+        </p>
+      {% endif %}
+    </section>
+  </article>
+{% endblock %}

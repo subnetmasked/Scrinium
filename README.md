@@ -116,7 +116,7 @@ The topbar is consistent everywhere in the app:
   - **Docs** — jump back to the documents view (`/`) from anywhere.
   - **Dashboard** — the links dashboard (`/dash`).
   - **Admin** — the admin panel (admins only).
-  - The signed-in username, then **Sign out**.
+  - The signed-in username, **Settings**, then **Sign out**.
 
 The active route is highlighted in the bar, so you always know where
 you are. On narrow viewports the brand name collapses to just the icon
@@ -134,16 +134,44 @@ When signed in as an admin, the topbar shows an **Admin** link.
 - **Categories** — define how the sidebar is organised. Each category
   has a display name, URL slug, a singular *noun* used in buttons (e.g.
   "server"), an icon (picked from a curated set), and an optional
-  description. **Drag the cards to reorder** — order is saved instantly
-  via XHR; up/down buttons remain for keyboard / no-JS users. Removing a
-  category leaves the on-disk folder intact unless you tick *"Also
-  delete `data/<slug>/`"* — it then shows up under **Other**.
+  description. Mark a category **Restricted** to limit it to selected
+  users (admins always have access). **Drag the cards to reorder** —
+  order is saved instantly via XHR; up/down buttons remain for keyboard /
+  no-JS users. Removing a category leaves the on-disk folder intact unless
+  you tick *"Also delete `data/<slug>/`"* — it then shows up under
+  **Other**.
 - **LDAP** — enable LDAP, set server URI, optional bind DN/password,
   search base, user filter (use `{username}` as the placeholder),
   StartTLS, cert verification, and auto-provisioning of LDAP users on
   first login. Click **Test connection** to verify before saving.
+- **Appearance** — site name override, bundled sans/mono fonts (including
+  JetBrains Mono and FiraCode **Nerd Fonts**), default theme for new
+  users, and feature toggles (code-block copy buttons, line numbers,
+  compact layout, tag cloud visibility).
 - **Backup** — see [Backups](#backups) below. Stream a zip of every
   markdown file and attachment in the data directory.
+
+---
+
+## User settings
+
+Any signed-in user can open **Settings** from the topbar:
+
+- **Appearance** — personal theme: dark, light, or match the system.
+- **Account** — change your own password (local users only; LDAP users
+  are directed to their directory).
+
+---
+
+## Per-category access
+
+By default, every signed-in user can read and edit all documents. Admins
+can restrict individual categories so only selected usernames (plus all
+admins) can view that section of the sidebar, open its entries, or follow
+links into it. Loose documents directly under `data/` are never
+restricted. Restricted paths return **404** (not 403) so existence is not
+leaked. Settings are stored in `categories.json` alongside name, slug,
+and icon.
 
 ---
 
@@ -334,6 +362,10 @@ in markdown. Scrinium resolves links by:
 Below the doc body, a **Backlinks (N)** panel lists every other document
 that links here (via wikilinks or resolvable markdown links), with a
 one-line snippet.
+
+Fenced code blocks show a **Copy** button on hover (when enabled under
+Admin → Appearance). Syntax highlighting uses Pygments; optional line
+numbers are also controlled there.
 
 ---
 
@@ -543,7 +575,7 @@ For a strictly internal VM accessed by IP, leave the defaults alone.
 ```bash
 podman-compose up -d --build
 curl -s http://127.0.0.1:8080/health
-# expect: {"data":"/data","ok":true,"version":"0.9.2"}
+# expect: {"data":"/data","ok":true,"version":"0.9.3"}
 ```
 
 ### 7. Open the firewall
@@ -698,10 +730,12 @@ re-roll the TLS config — no editing of committed files.
 ├── markdown_ext.py      # wikilinks + attachment image rewriting
 ├── backlinks.py         # backlinks index
 ├── links.py             # /dash links + favicon fetcher
-├── templates/           # Jinja templates (login, setup, view, edit, admin_*)
+├── templates/           # Jinja templates (login, setup, view, edit, admin_*, settings)
 ├── static/
 │   ├── style.css
 │   ├── editor.js
+│   ├── code-copy.js
+│   ├── fonts/                    # bundled Inter, IBM Plex, Nerd Fonts
 │   ├── scrinium-icon.svg       # topbar logo (primary)
 │   ├── favicon.ico             # legacy browser favicon
 │   ├── apple-touch-icon.png    # iOS home-screen icon

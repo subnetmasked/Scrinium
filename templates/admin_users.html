@@ -1,17 +1,17 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 {% block title %}Users — Admin — {{ site_name }}{% endblock %}
-{% block content %}
-  <div class="admin-tabs">
-    <a class="tab active" href="{{ url_for('admin_users') }}">Users</a>
-    <a class="tab" href="{{ url_for('admin_categories') }}">Categories</a>
-    <a class="tab" href="{{ url_for('admin_ldap') }}">LDAP</a>
-    <a class="tab" href="{{ url_for('admin_backup') }}">Backup</a>
-  </div>
+{% block admin_body %}
+  <header class="adm-header">
+    <div>
+      <h1>Users</h1>
+      <p class="adm-help muted">Manage local accounts, admin privileges, and passwords.</p>
+    </div>
+  </header>
 
   {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
   {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
 
-  <article class="doc-body">
+  <article class="doc-body adm-card">
     <h2>Add user</h2>
     <form method="post" action="{{ url_for('admin_users') }}" class="form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

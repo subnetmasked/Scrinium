@@ -1,4 +1,53 @@
-:root {
+/* ------- bundled fonts ------- */
+
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/Inter-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/Inter-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("fonts/IBMPlexMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  src: url("fonts/JetBrainsMonoNerdFont-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "FiraCode Nerd Font";
+  src: url("fonts/FiraCodeNerdFont-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ------- theme tokens (dark default) ------- */
+
+:root,
+:root[data-theme="dark"],
+:root[data-theme="system"] {
   --bg: #0d1117;
   --bg-elev: #161b22;
   --bg-elev-2: #1c222b;
@@ -15,10 +64,57 @@
 
   --radius: 6px;
   --radius-sm: 4px;
-  --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f6f8fa;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #eef1f5;
+  --border: #d0d7de;
+  --border-strong: #afb8c1;
+  --text: #1f2328;
+  --text-dim: #57606a;
+  --text-muted: #6e7781;
+  --accent: #0969da;
+  --accent-hover: #0550ae;
+  --danger: #cf222e;
+  --code-bg: #eef1f5;
+  --selection: #0969da33;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    --bg: #f6f8fa;
+    --bg-elev: #ffffff;
+    --bg-elev-2: #eef1f5;
+    --border: #d0d7de;
+    --border-strong: #afb8c1;
+    --text: #1f2328;
+    --text-dim: #57606a;
+    --text-muted: #6e7781;
+    --accent: #0969da;
+    --accent-hover: #0550ae;
+    --danger: #cf222e;
+    --code-bg: #eef1f5;
+    --selection: #0969da33;
+    color-scheme: light;
+  }
+}
+
+/* --sans and --mono are injected via base.html from admin appearance settings */
+
+:root {
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root[data-density="compact"] {
+  --content-pad: 1rem 1.1rem 2rem;
+  --sidebar-pad: 0.65rem 0.75rem;
 }
 
 * { box-sizing: border-box; }
@@ -1063,6 +1159,151 @@ body.centered {
 
 /* ------- admin panel ------- */
 
+.admin-shell {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+  margin-top: -0.25rem;
+}
+.admin-side {
+  position: sticky;
+  top: 0.75rem;
+  padding: 0.75rem 0;
+  border-right: 1px solid var(--border);
+}
+.admin-side-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.adm-link {
+  display: block;
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  text-decoration: none;
+}
+.adm-link:hover {
+  color: var(--text);
+  background: var(--bg-elev);
+  text-decoration: none;
+}
+.adm-link.active {
+  color: var(--text);
+  background: var(--bg-elev-2);
+  font-weight: 600;
+  border-left: 2px solid var(--accent);
+  padding-left: calc(0.65rem - 2px);
+}
+.admin-main {
+  min-width: 0;
+}
+.adm-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.adm-header h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.45rem;
+}
+.adm-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+}
+.adm-section {
+  margin: 1.25rem 0;
+  padding-top: 0.25rem;
+}
+.adm-section:first-child { margin-top: 0; }
+.adm-section h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+.adm-help {
+  margin: 0 0 0.75rem;
+}
+.checkbox-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+.access-control {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.access-control legend {
+  padding: 0 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.allowed-users-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-top: 0.5rem;
+}
+.badge.restricted-badge {
+  background: #8957e533;
+  color: #d2a8ff;
+  border: 1px solid #8957e566;
+}
+.settings-page .radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  border: 0;
+  padding: 0;
+  margin: 0 0 0.75rem;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 760px) {
+  .admin-shell {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .admin-side {
+    position: static;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.75rem;
+  }
+  .admin-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .adm-link.active {
+    border-left: 0;
+    border-bottom: 2px solid var(--accent);
+    padding-left: 0.65rem;
+  }
+}
+
 .admin-tabs {
   display: flex;
   gap: 0.4rem;
@@ -1420,6 +1661,59 @@ body.centered .site-footer {
 }
 
 /* ------- pygments codehilite (dark) ------- */
+
+.doc-body .code-block {
+  position: relative;
+  margin: 0.85rem 0;
+}
+.doc-body .code-block pre {
+  margin: 0;
+}
+.doc-body .code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  right: 8px;
+  z-index: 2;
+  pointer-events: none;
+}
+.doc-body .code-toolbar .copy-btn {
+  pointer-events: auto;
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.doc-body .code-block:hover .copy-btn,
+.doc-body .code-block .copy-btn:focus {
+  opacity: 1;
+}
+.doc-body .code-toolbar .copy-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.doc-body .code-toolbar .copy-btn.copied {
+  color: var(--accent);
+  opacity: 1;
+}
+.doc-body .code-lang {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: lowercase;
+  pointer-events: none;
+}
 
 .codehilite { background: transparent; }
 .codehilite .hll { background-color: #2a2f3a; }

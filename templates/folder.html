@@ -212,4 +212,7 @@
       {% endif %}
     </article>
   {% endif %}
+  {% if feature_flags.code_copy and overview_html %}
+    <script src="{{ url_for('static', filename='code-copy.js') }}?v={{ app_version }}"></script>
+  {% endif %}
 {% endblock %}

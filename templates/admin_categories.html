@@ -1,12 +1,12 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 {% block title %}Categories — Admin — {{ site_name }}{% endblock %}
-{% block content %}
-  <div class="admin-tabs">
-    <a class="tab" href="{{ url_for('admin_users') }}">Users</a>
-    <a class="tab active" href="{{ url_for('admin_categories') }}">Categories</a>
-    <a class="tab" href="{{ url_for('admin_ldap') }}">LDAP</a>
-    <a class="tab" href="{{ url_for('admin_backup') }}">Backup</a>
-  </div>
+{% block admin_body %}
+  <header class="adm-header">
+    <div>
+      <h1>Categories</h1>
+      <p class="adm-help muted">Organise the sidebar, reorder sections, and restrict access per category.</p>
+    </div>
+  </header>
 
   {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
   {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
@@ -24,7 +24,31 @@
     </fieldset>
   {%- endmacro %}
 
-  <article class="doc-body">
+  {% macro access_control(cat, field_prefix='') -%}
+    <fieldset class="access-control">
+      <legend>Access</legend>
+      <label class="inline">
+        <input type="checkbox" name="restricted" value="1"
+               {% if cat.restricted %}checked{% endif %}
+               data-access-toggle="{{ cat.slug }}">
+        Restricted — only selected users (plus admins) can view this category
+      </label>
+      <div class="allowed-users-list" data-access-list="{{ cat.slug }}">
+        <p class="adm-help muted small">Allowed users:</p>
+        {% set allowed = cat.allowed_users or [] %}
+        {% for u in all_users %}
+          {% set uname = u.username | lower %}
+          <label class="inline">
+            <input type="checkbox" name="allowed_users[]" value="{{ u.username }}"
+                   {% if u.is_admin %}checked disabled{% elif uname in allowed %}checked{% endif %}>
+            {{ u.username }}{% if u.is_admin %} <span class="muted small">(admin)</span>{% endif %}
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+  {%- endmacro %}
+
+  <article class="doc-body adm-card">
     <p class="muted">
       Categories group related entries (servers, applications, network devices,
       and so on). Each becomes its own section in the sidebar with an
@@ -56,6 +80,23 @@
         </label>
       </div>
       {{ icon_picker("icon", "folder") }}
+      <fieldset class="access-control">
+        <legend>Access</legend>
+        <label class="inline">
+          <input type="checkbox" name="restricted" value="1">
+          Restricted — only selected users (plus admins) can view this category
+        </label>
+        <div class="allowed-users-list">
+          <p class="adm-help muted small">Allowed users:</p>
+          {% for u in all_users %}
+            <label class="inline">
+              <input type="checkbox" name="allowed_users[]" value="{{ u.username }}"
+                     {% if u.is_admin %}checked disabled{% endif %}>
+              {{ u.username }}{% if u.is_admin %} <span class="muted small">(admin)</span>{% endif %}
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
       <div class="form-actions">
         <button class="btn primary" type="submit">Add category</button>
       </div>
@@ -73,6 +114,9 @@
                 <strong>{{ c.name }}</strong>
                 <code class="muted slug-code">/{{ c.slug }}</code>
                 <span class="muted small">add a {{ c.noun }}</span>
+                {% if c.restricted %}
+                  <span class="badge restricted-badge" title="Restricted category">restricted</span>
+                {% endif %}
                 {% if not c.folder_exists %}
                   <span class="badge muted-badge" title="Folder data/{{ c.slug }} does not yet exist">empty</span>
                 {% endif %}
@@ -113,6 +157,7 @@
                   <input name="description" value="{{ c.description or '' }}">
                 </label>
                 {{ icon_picker("icon", c.icon) }}
+                {{ access_control(c) }}
                 <div class="form-actions">
                   <button class="btn primary" type="submit">Save</button>
                 </div>

@@ -1,12 +1,12 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 {% block title %}LDAP — Admin — {{ site_name }}{% endblock %}
-{% block content %}
-  <div class="admin-tabs">
-    <a class="tab" href="{{ url_for('admin_users') }}">Users</a>
-    <a class="tab" href="{{ url_for('admin_categories') }}">Categories</a>
-    <a class="tab active" href="{{ url_for('admin_ldap') }}">LDAP</a>
-    <a class="tab" href="{{ url_for('admin_backup') }}">Backup</a>
-  </div>
+{% block admin_body %}
+  <header class="adm-header">
+    <div>
+      <h1>LDAP</h1>
+      <p class="adm-help muted">Directory authentication and auto-provisioning.</p>
+    </div>
+  </header>
 
   {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
   {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
@@ -16,7 +16,7 @@
     </div>
   {% endif %}
 
-  <article class="doc-body">
+  <article class="doc-body adm-card">
     <p class="muted">
       Configure an LDAP / Active Directory server for authentication.
       When enabled, users not found locally can sign in with their LDAP

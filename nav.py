@@ -212,9 +212,26 @@ def load_categories(config_dir: Path) -> list[dict]:
                 "noun": entry.get("noun") or "entry",
                 "icon": icon,
                 "description": entry.get("description") or "",
+                "restricted": bool(entry.get("restricted")),
+                "allowed_users": _normalize_allowed_users(
+                    entry.get("allowed_users")
+                ),
             }
         )
     return cleaned
+
+
+def _normalize_allowed_users(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        name = str(item).strip().lower()
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
 
 
 def save_categories(config_dir: Path, categories: list[dict]) -> None:
@@ -234,6 +251,10 @@ def save_categories(config_dir: Path, categories: list[dict]) -> None:
                 "noun": c.get("noun") or "entry",
                 "icon": icon,
                 "description": c.get("description") or "",
+                "restricted": bool(c.get("restricted")),
+                "allowed_users": _normalize_allowed_users(
+                    c.get("allowed_users")
+                ),
             }
         )
     p.write_text(json.dumps(serialised, indent=2) + "\n", encoding="utf-8")
@@ -244,6 +265,62 @@ def find_category(categories: list[dict], slug: str) -> Optional[dict]:
         if c.get("slug") == slug:
             return c
     return None
+
+
+def category_slug_for_path(rel_path: str) -> Optional[str]:
+    """Return the top-level category slug for a doc/folder path, or None."""
+    parts = [p for p in (rel_path or "").split("/") if p]
+    return parts[0] if parts else None
+
+
+def user_can_access_category(
+    slug: str,
+    user: Optional[dict],
+    cats: list[dict],
+) -> bool:
+    if not slug:
+        return True
+    if user and user.get("is_admin"):
+        return True
+    cat = find_category(cats, slug)
+    if cat is None or not cat.get("restricted"):
+        return True
+    if not user:
+        return False
+    allowed = {u.lower() for u in cat.get("allowed_users") or []}
+    return user["username"].lower() in allowed
+
+
+def accessible_category_slugs(
+    user: Optional[dict], cats: list[dict]
+) -> set[str]:
+    return {
+        c["slug"]
+        for c in cats
+        if c.get("slug") and user_can_access_category(c["slug"], user, cats)
+    }
+
+
+def path_is_accessible(
+    rel_path: str,
+    user: Optional[dict],
+    cats: list[dict],
+) -> bool:
+    slug = category_slug_for_path(rel_path)
+    if slug is None:
+        return True
+    cat_slugs = {c["slug"] for c in cats if c.get("slug")}
+    if slug not in cat_slugs:
+        return True
+    return user_can_access_category(slug, user, cats)
+
+
+def filter_accessible_paths(
+    paths: Iterable[str],
+    user: Optional[dict],
+    cats: list[dict],
+) -> set[str]:
+    return {p for p in paths if path_is_accessible(p, user, cats)}
 
 
 # ---------------------------------------------------------------------------
@@ -403,8 +480,19 @@ def count_descendant_docs(node: dict) -> int:
 # ---------------------------------------------------------------------------
 
 
-def build_navigation(root: Path, categories: list[dict]) -> dict:
+def build_navigation(
+    root: Path,
+    categories: list[dict],
+    *,
+    user: Optional[dict] = None,
+) -> dict:
     """Group the top of the data tree by category for the sidebar."""
+    if user is not None:
+        categories = [
+            c
+            for c in categories
+            if user_can_access_category(c.get("slug") or "", user, categories)
+        ]
     cat_slugs = {c["slug"] for c in categories if c.get("slug")}
 
     loose_docs: list[dict] = []
@@ -514,7 +602,11 @@ def relative_time(ts: float, now: Optional[float] = None) -> str:
 
 
 def find_entries_with_tag(
-    root: Path, categories: list[dict], tag: str
+    root: Path,
+    categories: list[dict],
+    tag: str,
+    *,
+    user: Optional[dict] = None,
 ) -> list[dict]:
     """Return entries whose overview's tags list includes the given tag
     (case-insensitive)."""
@@ -525,6 +617,8 @@ def find_entries_with_tag(
     for cat in categories:
         slug = cat.get("slug")
         if not slug:
+            continue
+        if user is not None and not user_can_access_category(slug, user, categories):
             continue
         cat_path = root / slug
         if not cat_path.is_dir():
@@ -559,8 +653,15 @@ def dashboard_data(
     recent_doc_limit: int = 6,
     recent_entry_limit: int = 6,
     tag_limit: int = 30,
+    user: Optional[dict] = None,
 ) -> dict:
     """Compute everything the dashboard template needs in a single pass."""
+    if user is not None:
+        categories = [
+            c
+            for c in categories
+            if user_can_access_category(c.get("slug") or "", user, categories)
+        ]
     cat_map = {c["slug"]: c for c in categories if c.get("slug")}
     cat_doc_counts: dict[str, int] = {s: 0 for s in cat_map}
     cat_entry_set: dict[str, set[str]] = {s: set() for s in cat_map}
@@ -583,6 +684,10 @@ def dashboard_data(
             location = "Loose document"
             if len(parts) >= 2 and parts[0] in cat_map:
                 cat = cat_map[parts[0]]
+                if user is not None and not user_can_access_category(
+                    parts[0], user, categories
+                ):
+                    continue
                 cat_doc_counts[parts[0]] += 1
                 if len(parts) >= 3:
                     cat_entry_set[parts[0]].add(parts[1])
@@ -701,6 +806,11 @@ __all__: Iterable[str] = (
     "load_categories",
     "save_categories",
     "find_category",
+    "category_slug_for_path",
+    "user_can_access_category",
+    "accessible_category_slugs",
+    "path_is_accessible",
+    "filter_accessible_paths",
     "find_overview",
     "parse_overview_tags",
     "resolve_wikilink",

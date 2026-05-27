@@ -12,6 +12,7 @@ import tempfile
 import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from functools import wraps
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -56,7 +57,7 @@ SITE_NAME = os.environ.get("SCRINIUM_SITE_NAME", "Scrinium")
 HTTPS_ONLY = os.environ.get("SCRINIUM_HTTPS_ONLY", "0") == "1"
 TRUST_PROXY = os.environ.get("SCRINIUM_TRUST_PROXY", "0") == "1"
 MAX_UPLOAD_MB = int(os.environ.get("SCRINIUM_MAX_UPLOAD_MB", "8"))
-APP_VERSION = "0.9.2"
+APP_VERSION = "0.9.3"
 PROJECT_URL = "https://github.com/subnetmasked/Scrinium"
 AUTHOR_NAME = "subnetmasked"
 AUTHOR_URL = "https://github.com/subnetmasked"
@@ -108,30 +109,46 @@ app.config.update(
 if TRUST_PROXY:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-auth.init_db(Path(app.config["AUTH_DB"]))
-links.init_db(Path(app.config["AUTH_DB"]))
-nav.load_categories(CONFIG_DIR)
+with app.app_context():
+    auth.init_db(Path(app.config["AUTH_DB"]))
+    links.init_db(Path(app.config["AUTH_DB"]))
+    nav.load_categories(CONFIG_DIR)
 
 
-md_renderer = markdown.Markdown(
-    extensions=[
-        "fenced_code",
-        "tables",
-        "toc",
-        "sane_lists",
-        "admonition",
-        "codehilite",
-        "footnotes",
-        "attr_list",
-        "def_list",
-        "markdown_ext",
-    ],
-    extension_configs={
-        "codehilite": {"guess_lang": False, "css_class": "codehilite"},
-        "toc": {"permalink": False},
-    },
-    output_format="html5",
-)
+def _build_md_renderer() -> markdown.Markdown:
+    flags = auth.feature_flags()
+    return markdown.Markdown(
+        extensions=[
+            "fenced_code",
+            "tables",
+            "toc",
+            "sane_lists",
+            "admonition",
+            "codehilite",
+            "footnotes",
+            "attr_list",
+            "def_list",
+            "markdown_ext",
+        ],
+        extension_configs={
+            "codehilite": {
+                "guess_lang": False,
+                "css_class": "codehilite",
+                "linenums": bool(flags.get("code_linenos")),
+            },
+            "toc": {"permalink": False},
+        },
+        output_format="html5",
+    )
+
+
+with app.app_context():
+    md_renderer = _build_md_renderer()
+
+
+def rebuild_md_renderer() -> None:
+    global md_renderer
+    md_renderer = _build_md_renderer()
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +284,62 @@ def _category_slugs() -> list[str]:
     return [c["slug"] for c in categories()]
 
 
+def _user_dict(user: Any) -> Optional[dict]:
+    if user is None:
+        return None
+    return {"username": user["username"], "is_admin": bool(user["is_admin"])}
+
+
+def _accessible_doc_paths(user: Any | None = None) -> set[str]:
+    if user is None:
+        user = auth.current_user()
+    return nav.filter_accessible_paths(
+        all_doc_paths(), _user_dict(user), categories()
+    )
+
+
+def _check_path_access(rel_path: str) -> None:
+    user = auth.current_user()
+    if not nav.path_is_accessible(rel_path, _user_dict(user), categories()):
+        abort(404)
+
+
+def _check_category_access(slug: str) -> None:
+    user = auth.current_user()
+    if not nav.user_can_access_category(slug, _user_dict(user), categories()):
+        abort(404)
+
+
+def doc_rel_from_attachment(attachment_path: str) -> str:
+    parts = [p for p in attachment_path.split("/") if p]
+    if "_attachments" not in parts:
+        return ""
+    idx = parts.index("_attachments")
+    if idx == 0:
+        return ""
+    if parts[0] == "_attachments":
+        return parts[1] if len(parts) > 1 else ""
+    stem = parts[idx + 1] if len(parts) > idx + 1 else ""
+    parent = "/".join(parts[:idx])
+    if parent and stem:
+        return f"{parent}/{stem}"
+    return parent or stem
+
+
+def require_doc_access(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        path = kwargs.get("path")
+        slug = kwargs.get("slug")
+        if path is not None:
+            _check_path_access(path)
+        elif slug is not None:
+            _check_category_access(slug)
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def _default_new_doc_content(
     title: str,
     *,
@@ -324,7 +397,8 @@ def _doc_or_folder_url(rel: str) -> str:
 
 
 def render_markdown(body: str, doc_rel_path: str) -> str:
-    paths = set(all_doc_paths())
+    user = auth.current_user()
+    paths = _accessible_doc_paths(user)
 
     def _attach_url(dr: str, fn: str) -> str:
         return url_for("attachment", path=attachment_rel_for(dr, fn))
@@ -355,18 +429,30 @@ CSRF_EXEMPT_ENDPOINTS: set[str] = set()
 @app.context_processor
 def inject_globals():
     user = auth.current_user() if "user_id" in session else None
+    appearance = auth.appearance_settings()
+    features = auth.feature_flags()
+    if user:
+        user_prefs = auth.get_user_prefs(user["id"])
+    else:
+        user_prefs = {"theme": appearance.get("default_theme", "system")}
     return {
-        "site_name": SITE_NAME,
+        "site_name": auth.effective_site_name(SITE_NAME),
         "app_version": APP_VERSION,
         "project_url": PROJECT_URL,
         "author_name": AUTHOR_NAME,
         "author_url": AUTHOR_URL,
         "license_name": LICENSE_NAME,
-        "navigation": nav.build_navigation(DATA_DIR, categories()),
+        "navigation": nav.build_navigation(
+            DATA_DIR, categories(), user=_user_dict(user)
+        ),
         "current_user": user,
         "csrf_token": auth.csrf_token,
         "category_icon": nav.icon_svg,
         "icon_names": list(nav.ICON_LIBRARY.keys()),
+        "user_prefs": user_prefs,
+        "site_appearance": appearance,
+        "feature_flags": features,
+        "font_css": auth.font_css_variables(appearance),
     }
 
 
@@ -473,8 +559,11 @@ def logout():
 
 @app.route("/")
 def index():
+    user = auth.current_user()
     cats = categories()
-    data = nav.dashboard_data(DATA_DIR, cats)
+    data = nav.dashboard_data(DATA_DIR, cats, user=_user_dict(user))
+    if not auth.feature_flags().get("show_tag_cloud", True):
+        data = {**data, "tag_cloud": []}
     welcome_html = None
     welcome = DATA_DIR / f"welcome{MD_EXT}"
     if welcome.is_file():
@@ -494,10 +583,51 @@ def index():
     )
 
 
+@app.route("/settings", methods=["GET", "POST"])
+@auth.login_required
+def settings():
+    user = auth.current_user()
+    error = None
+    notice = None
+    prefs = auth.get_user_prefs(user["id"])
+    if request.method == "POST":
+        section = request.form.get("section") or ""
+        try:
+            if section == "appearance":
+                auth.set_user_prefs(user["id"], theme=request.form.get("theme"))
+                notice = "Appearance preferences saved."
+            elif section == "password":
+                if user["source"] != "local":
+                    raise ValueError(
+                        "Your password is managed by your directory."
+                    )
+                password = request.form.get("password", "")
+                confirm = request.form.get("confirm", "")
+                auth.require_password(password)
+                if password != confirm:
+                    raise ValueError("Passwords do not match.")
+                auth.set_password(user["id"], password)
+                notice = "Password updated."
+            else:
+                raise ValueError("Unknown settings section.")
+        except ValueError as e:
+            error = str(e)
+        prefs = auth.get_user_prefs(user["id"])
+    return render_template(
+        "settings.html",
+        prefs=prefs,
+        error=error,
+        notice=notice,
+    )
+
+
 @app.route("/t/<path:tag>")
 def tag_page(tag: str):
+    user = auth.current_user()
     cats = categories()
-    matches = nav.find_entries_with_tag(DATA_DIR, cats, tag)
+    matches = nav.find_entries_with_tag(
+        DATA_DIR, cats, tag, user=_user_dict(user)
+    )
     return render_template(
         "tag.html",
         tag=tag,
@@ -551,6 +681,7 @@ def _jinja_is_url(value: Any) -> bool:
 
 
 @app.route("/d/<path:path>")
+@require_doc_access
 def view(path: str):
     target = safe_join(path + MD_EXT)
     if not target.is_file():
@@ -558,7 +689,7 @@ def view(path: str):
     text = target.read_text(encoding="utf-8")
     fm, body = frontmatter.parse(text)
     html = render_markdown(body, path)
-    doc_paths = set(all_doc_paths())
+    doc_paths = _accessible_doc_paths()
     bl = backlinks.backlinks_for(DATA_DIR, doc_paths, path)
     box_fm = _infobox_fm(target, fm, path)
     doc_category = frontmatter.infer_category(path, _category_slugs())
@@ -576,6 +707,7 @@ def view(path: str):
 
 
 @app.route("/f/<path:path>")
+@require_doc_access
 def folder(path: str):
     target = safe_join(path)
     if not target.is_dir():
@@ -610,7 +742,7 @@ def folder(path: str):
             )
             overview_fm_rows = frontmatter.fm_rows(overview_fm, overview_category)
             overview_html = render_markdown(ov_body, overview_rel)
-            doc_paths = set(all_doc_paths())
+            doc_paths = _accessible_doc_paths()
             overview_backlinks = backlinks.backlinks_for(
                 DATA_DIR, doc_paths, overview_rel
             )
@@ -662,6 +794,7 @@ def folder(path: str):
 
 
 @app.route("/e/<path:path>", methods=["GET", "POST"])
+@require_doc_access
 def edit(path: str):
     target = safe_join(path + MD_EXT)
     if not target.is_file():
@@ -692,6 +825,10 @@ def new():
     kind = request.values.get("kind", "doc")
     folder_hint = (request.values.get("folder") or "").strip().strip("/")
     name_hint = (request.values.get("name") or "").strip()
+    if folder_hint:
+        slug = nav.category_slug_for_path(folder_hint)
+        if slug:
+            _check_category_access(slug)
     if request.method == "GET":
         if name_hint and folder_hint:
             path_value = f"{folder_hint}/{name_hint}"
@@ -715,6 +852,10 @@ def new():
         try:
             segments = parse_segments(path_input)
             if kind == "folder":
+                if segments:
+                    slug = nav.category_slug_for_path("/".join(segments))
+                    if slug:
+                        _check_category_access(slug)
                 target = DATA_DIR.joinpath(*segments)
                 if target.exists():
                     raise PathError("A folder or file with that path already exists.")
@@ -731,6 +872,10 @@ def new():
                 segments[-1] = leaf
             if not leaf:
                 raise PathError("Document name cannot be empty.")
+            rel_path = "/".join(segments)
+            slug = nav.category_slug_for_path(rel_path)
+            if slug:
+                _check_category_access(slug)
             target = DATA_DIR.joinpath(*segments[:-1], leaf + MD_EXT)
             existing_dir = DATA_DIR.joinpath(*segments)
             if target.exists():
@@ -764,6 +909,7 @@ def new():
 
 
 @app.route("/c/<slug>/new", methods=["GET", "POST"])
+@require_doc_access
 def entry_new(slug: str):
     cat = nav.find_category(categories(), slug)
     if not cat:
@@ -825,6 +971,7 @@ def entry_new(slug: str):
 
 
 @app.route("/del/<path:path>", methods=["POST"])
+@require_doc_access
 def delete(path: str):
     target = safe_join(path + MD_EXT)
     if target.is_file():
@@ -845,6 +992,8 @@ def search():
     selected_category = nav.find_category(cats, cat_slug) if cat_slug else None
     if cat_slug and not selected_category:
         cat_slug = ""
+    if selected_category:
+        _check_category_access(selected_category["slug"])
 
     results: list[dict] = []
     if q:
@@ -856,12 +1005,16 @@ def search():
             )
         else:
             walker = DATA_DIR.rglob(f"*{MD_EXT}")
+        accessible = _accessible_doc_paths()
         for path in walker:
             try:
                 rel = path.relative_to(DATA_DIR)
             except ValueError:
                 continue
             if any(part.startswith(".") for part in rel.parts):
+                continue
+            doc_path = doc_rel(path)
+            if doc_path not in accessible:
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
@@ -905,6 +1058,8 @@ def _snippet(text: str, needle: str, width: int = 140) -> str:
 def api_preview():
     body = request.get_data(as_text=True)
     doc_for = (request.args.get("for") or "").strip().strip("/")
+    if doc_for:
+        _check_path_access(doc_for)
     _fm, md_body = frontmatter.parse(body)
     if doc_for:
         return render_markdown(md_body, doc_for)
@@ -918,6 +1073,7 @@ def api_upload():
     doc_for = (request.args.get("for") or "").strip().strip("/")
     if not doc_for:
         abort(400, "Missing ?for=<doc_rel>")
+    _check_path_access(doc_for)
     target_md = safe_join(doc_for + MD_EXT)
     if not target_md.is_file():
         abort(404, "Document not found")
@@ -967,6 +1123,9 @@ def api_upload():
 @app.route("/a/<path:path>")
 @auth.login_required
 def attachment(path: str):
+    doc_for = doc_rel_from_attachment(path)
+    if doc_for:
+        _check_path_access(doc_for)
     target = safe_join(path)
     if not target.is_file():
         abort(404)
@@ -1363,6 +1522,12 @@ def admin_categories():
             value = (value or "").strip()
             return value if value in nav.ICON_LIBRARY else nav.DEFAULT_ICON
 
+        def _parse_allowed_users() -> list[str]:
+            return nav._normalize_allowed_users(
+                request.form.getlist("allowed_users[]")
+                or request.form.getlist("allowed_users")
+            )
+
         try:
             if action == "create":
                 name = (request.form.get("name") or "").strip()
@@ -1370,6 +1535,8 @@ def admin_categories():
                 noun = (request.form.get("noun") or "").strip() or "entry"
                 description = (request.form.get("description") or "").strip()
                 icon = _icon_or_default(request.form.get("icon"))
+                restricted = bool(request.form.get("restricted"))
+                allowed_users = _parse_allowed_users()
                 if not name:
                     raise ValueError("Name is required.")
                 slug = nav.normalize_slug(slug_input or name)
@@ -1387,6 +1554,8 @@ def admin_categories():
                         "noun": noun,
                         "icon": icon,
                         "description": description,
+                        "restricted": restricted,
+                        "allowed_users": allowed_users,
                     }
                 )
                 nav.save_categories(CONFIG_DIR, cats)
@@ -1406,6 +1575,8 @@ def admin_categories():
                 target["noun"] = noun
                 target["icon"] = icon
                 target["description"] = description
+                target["restricted"] = bool(request.form.get("restricted"))
+                target["allowed_users"] = _parse_allowed_users()
                 nav.save_categories(CONFIG_DIR, cats)
                 notice = f"Category {name!r} updated."
             elif action == "reorder_full":
@@ -1476,6 +1647,35 @@ def admin_categories():
     return render_template(
         "admin_categories.html",
         categories=folder_status,
+        all_users=auth.list_users(),
+        error=error,
+        notice=notice,
+    )
+
+
+@app.route("/admin/appearance", methods=["GET", "POST"])
+@auth.admin_required
+def admin_appearance():
+    error = None
+    notice = None
+    appearance = auth.appearance_settings()
+    features = auth.feature_flags()
+    if request.method == "POST":
+        try:
+            auth.save_appearance_settings(request.form)
+            auth.save_feature_flags(request.form)
+            rebuild_md_renderer()
+            appearance = auth.appearance_settings()
+            features = auth.feature_flags()
+            notice = "Appearance and feature settings saved."
+        except ValueError as e:
+            error = str(e)
+    return render_template(
+        "admin_appearance.html",
+        appearance=appearance,
+        features=features,
+        sans_choices=auth.FONT_CHOICES_SANS,
+        mono_choices=auth.FONT_CHOICES_MONO,
         error=error,
         notice=notice,
     )

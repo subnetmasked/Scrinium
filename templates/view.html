@@ -35,4 +35,7 @@
       {% include "_infobox.html" %}
     {% endwith %}
   </div>
+  {% if feature_flags.code_copy %}
+    <script src="{{ url_for('static', filename='code-copy.js') }}?v={{ app_version }}"></script>
+  {% endif %}
 {% endblock %}

@@ -1,14 +1,14 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 {% block title %}Backup — Admin — {{ site_name }}{% endblock %}
-{% block content %}
-  <div class="admin-tabs">
-    <a class="tab" href="{{ url_for('admin_users') }}">Users</a>
-    <a class="tab" href="{{ url_for('admin_categories') }}">Categories</a>
-    <a class="tab" href="{{ url_for('admin_ldap') }}">LDAP</a>
-    <a class="tab active" href="{{ url_for('admin_backup') }}">Backup</a>
-  </div>
+{% block admin_body %}
+  <header class="adm-header">
+    <div>
+      <h1>Backup</h1>
+      <p class="adm-help muted">Download a zip archive of all markdown and attachments.</p>
+    </div>
+  </header>
 
-  <article class="doc-body">
+  <article class="doc-body adm-card">
     <h2>Download a content backup</h2>
     <p class="muted">
       Snapshots every markdown file and image attachment under
