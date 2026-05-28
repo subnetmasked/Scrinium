@@ -29,9 +29,9 @@
              alt="" width="30" height="30">
         <span class="brand-name">{{ site_name }}</span>
       </a>
-      <form class="search" action="{{ url_for('search') }}" method="get" role="search">
-        <input type="search" name="q" placeholder="Search…" value="{{ request.args.get('q','') }}" autocomplete="off">
-      </form>
+      <a class="btn topbar-search-btn"
+         href="{{ url_for('search') }}"
+         title="Advanced search">Search...</a>
     </div>
     <nav class="actions">
       <a class="btn" href="{{ url_for('new') }}">+ New doc</a>
@@ -60,6 +60,12 @@
   <div class="layout{% if hide_sidebar %} layout-full{% endif %}">
     {% if not hide_sidebar %}
     <aside class="sidebar">
+      <form class="sidebar-search" role="search" onsubmit="return false">
+        <input type="search" id="sidebar-filter" placeholder="Filter..."
+               autocomplete="off" aria-label="Filter sidebar">
+      </form>
+      <p class="sidebar-empty" id="sidebar-empty" hidden>No matches.</p>
+
       {% macro render_tree(node) -%}
         <ul class="tree">
           {% for f in node.folders %}
@@ -67,7 +73,7 @@
               <details open>
                 <summary>
                   <a class="folder-name" href="{{ url_for('folder', path=f.rel) }}">{{ f.name }}</a>
-                  <a class="add" href="{{ url_for('new', folder=f.rel) }}" title="New doc here">+</a>
+                  <a class="add" href="{{ url_for('new', folder=f.rel) }}" title="New doc here" onclick="event.stopPropagation()">+</a>
                 </summary>
                 {{ render_tree(f.children) }}
               </details>
@@ -93,11 +99,13 @@
         </li>
       {%- endmacro %}
 
-      <section class="nav-section">
-        <h3 class="nav-title">
+      <details class="nav-section"
+               data-section="loose"
+               {% if user_prefs.sidebar_default != 'collapsed' %}open{% endif %}>
+        <summary class="nav-title">
           <span class="nav-label">Loose documents</span>
-          <a class="add" href="{{ url_for('new') }}" title="New loose document">+</a>
-        </h3>
+          <a class="add" href="{{ url_for('new') }}" title="New loose document" onclick="event.stopPropagation()">+</a>
+        </summary>
         {% if navigation.loose %}
           <ul class="tree flat">
             {% for d in navigation.loose %}{{ render_doc_link(d) }}{% endfor %}
@@ -105,16 +113,18 @@
         {% else %}
           <p class="empty-cat"><a href="{{ url_for('new') }}">Add a document</a></p>
         {% endif %}
-      </section>
+      </details>
 
       {% for cat in navigation.categories %}
-        <section class="nav-section">
-          <h3 class="nav-title">
+        <details class="nav-section"
+                 data-section="cat-{{ cat.slug }}"
+                 {% if user_prefs.sidebar_default != 'collapsed' %}open{% endif %}>
+          <summary class="nav-title">
             <span class="cat-icon">{{ category_icon(cat.icon) | safe }}</span>
             <a class="cat-name" href="{{ url_for('folder', path=cat.slug) }}">{{ cat.name }}</a>
             <span class="cat-count" title="{{ cat.entry_count }} {{ cat.noun }}{{ '' if cat.entry_count == 1 else 's' }}">{{ cat.entry_count }}</span>
-            <a class="add" href="{{ url_for('entry_new', slug=cat.slug) }}" title="Add {{ cat.noun }}">+</a>
-          </h3>
+            <a class="add" href="{{ url_for('entry_new', slug=cat.slug) }}" title="Add {{ cat.noun }}" onclick="event.stopPropagation()">+</a>
+          </summary>
           {% if cat.entries %}
             <ul class="tree flat">
               {% for e in cat.entries %}
@@ -126,7 +136,7 @@
                       <summary>
                         <a class="entry-name" href="{{ url_for('folder', path=e.rel) }}">{{ e.name }}</a>
                         <span class="cat-count" title="{{ e.doc_count }} document{{ '' if e.doc_count == 1 else 's' }}">{{ e.doc_count }}</span>
-                        <a class="add" href="{{ url_for('new', folder=e.rel) }}" title="Add doc">+</a>
+                        <a class="add" href="{{ url_for('new', folder=e.rel) }}" title="Add doc" onclick="event.stopPropagation()">+</a>
                       </summary>
                       {{ render_tree(e.children) }}
                     </details>
@@ -139,16 +149,18 @@
               <a href="{{ url_for('entry_new', slug=cat.slug) }}">Add {{ cat.noun }}</a>
             </p>
           {% endif %}
-        </section>
+        </details>
       {% endfor %}
 
       {% if navigation.other %}
-        <section class="nav-section">
-          <h3 class="nav-title">
+        <details class="nav-section"
+                 data-section="other"
+                 {% if user_prefs.sidebar_default != 'collapsed' %}open{% endif %}>
+          <summary class="nav-title">
             <span class="nav-label">Other</span>
-          </h3>
+          </summary>
           {{ render_tree({"folders": navigation.other, "docs": []}) }}
-        </section>
+        </details>
       {% endif %}
     </aside>
     {% endif %}
@@ -158,5 +170,8 @@
       {% include "_footer.html" %}
     </main>
   </div>
+  {% if not hide_sidebar %}
+    <script src="{{ url_for('static', filename='sidebar.js') }}?v={{ app_version }}" defer></script>
+  {% endif %}
 </body>
 </html>

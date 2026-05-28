@@ -210,6 +210,9 @@ input:focus, select:focus, textarea:focus {
   min-width: 0;
 }
 .topbar .search input { width: 100%; }
+.topbar-search-btn {
+  flex: 0 0 auto;
+}
 
 .actions {
   display: flex;
@@ -285,6 +288,29 @@ input:focus, select:focus, textarea:focus {
   max-height: calc(100vh - 53px);
   position: sticky;
   top: 53px;
+}
+
+.sidebar-search {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.1rem 0.25rem 0.45rem;
+  margin: -0.2rem 0 0.25rem;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-search input[type="search"] {
+  width: 100%;
+  font-size: 0.88rem;
+  padding: 0.35rem 0.55rem;
+}
+.sidebar-empty {
+  margin: 0.35rem 0.45rem 0.65rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.sidebar li[hidden] {
+  display: none !important;
 }
 
 .content {
@@ -370,6 +396,13 @@ input:focus, select:focus, textarea:focus {
 /* ------- sidebar nav sections ------- */
 
 .nav-section { margin-bottom: 0.85rem; }
+details.nav-section > summary.nav-title {
+  list-style: none;
+  cursor: pointer;
+}
+details.nav-section > summary.nav-title::-webkit-details-marker {
+  display: none;
+}
 
 .nav-title {
   display: flex;
@@ -383,6 +416,16 @@ input:focus, select:focus, textarea:focus {
   letter-spacing: 0.7px;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
+}
+details.nav-section > .nav-title::before {
+  content: "▸";
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  transition: transform 0.12s ease;
+  margin-right: 0.1rem;
+}
+details.nav-section[open] > .nav-title::before {
+  transform: rotate(90deg);
 }
 .nav-title .nav-label { flex: 1; }
 .nav-title .cat-name {
@@ -455,6 +498,14 @@ input:focus, select:focus, textarea:focus {
   margin-left: 0.1rem;
   font-size: 0.95rem;
   line-height: 1;
+}
+
+.tree a mark,
+.nav-title mark {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: inherit;
+  padding: 0 0.08rem;
+  border-radius: 0.2rem;
 }
 
 /* ------- doc ------- */

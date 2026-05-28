@@ -662,6 +662,11 @@ def settings():
             if section == "appearance":
                 auth.set_user_prefs(user["id"], theme=request.form.get("theme"))
                 notice = "Appearance preferences saved."
+            elif section == "sidebar":
+                auth.set_user_prefs(
+                    user["id"], sidebar_default=request.form.get("sidebar_default")
+                )
+                notice = "Sidebar preferences saved."
             elif section == "password":
                 if user["source"] != "local":
                     raise ValueError(

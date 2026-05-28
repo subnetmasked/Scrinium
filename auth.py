@@ -100,6 +100,11 @@ def migrate_db(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'system'"
         )
+    if "sidebar_default" not in have:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN sidebar_default TEXT NOT NULL "
+            "DEFAULT 'expanded'"
+        )
 
 
 @contextmanager
@@ -189,16 +194,22 @@ def touch_login(user_id: int) -> None:
 
 
 VALID_THEMES = frozenset({"dark", "light", "system"})
+VALID_SIDEBAR_DEFAULTS = frozenset({"expanded", "collapsed"})
 
 
 def get_user_prefs(user_id: int) -> dict:
     user = get_user(user_id)
     if user is None:
-        return {"theme": "system"}
+        return {"theme": "system", "sidebar_default": "expanded"}
     theme = (user["theme"] if "theme" in user.keys() else None) or "system"
     if theme not in VALID_THEMES:
         theme = "system"
-    return {"theme": theme}
+    sidebar_default = (
+        user["sidebar_default"] if "sidebar_default" in user.keys() else None
+    ) or "expanded"
+    if sidebar_default not in VALID_SIDEBAR_DEFAULTS:
+        sidebar_default = "expanded"
+    return {"theme": theme, "sidebar_default": sidebar_default}
 
 
 def set_user_prefs(user_id: int, **kwargs) -> None:
@@ -210,6 +221,12 @@ def set_user_prefs(user_id: int, **kwargs) -> None:
             raise ValueError("Invalid theme.")
         updates.append("theme = ?")
         values.append(theme)
+    if "sidebar_default" in kwargs:
+        sidebar_default = kwargs["sidebar_default"]
+        if sidebar_default not in VALID_SIDEBAR_DEFAULTS:
+            raise ValueError("Invalid sidebar default.")
+        updates.append("sidebar_default = ?")
+        values.append(sidebar_default)
     if not updates:
         return
     values.append(user_id)
