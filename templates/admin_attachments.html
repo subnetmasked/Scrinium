@@ -1,0 +1,30 @@
+{% extends "admin_base.html" %}
+{% block title %}Attachments — Admin — {{ site_name }}{% endblock %}
+{% block admin_body %}
+  <header class="adm-header">
+    <div>
+      <h1>Attachments</h1>
+      <p class="adm-help muted">Control document file attachments.</p>
+    </div>
+  </header>
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
+  <article class="doc-body adm-card">
+    <form method="post" action="{{ url_for('admin_attachments') }}" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="inline">
+        <input type="checkbox" name="enabled" value="1" {% if settings.enabled %}checked{% endif %}>
+        Enable attachments
+      </label>
+      <label>
+        <span>Max size (MB)</span>
+        <input type="number" min="1" max="1024" name="max_mb" value="{{ settings.max_mb }}">
+      </label>
+      <label>
+        <span>Allowed extensions (one per line, with dot)</span>
+        <textarea name="extensions" rows="10">{{ settings.extensions | join('\n') }}</textarea>
+      </label>
+      <div class="form-actions"><button class="btn primary" type="submit">Save settings</button></div>
+    </form>
+  </article>
+{% endblock %}

@@ -1927,3 +1927,45 @@ details[open] > .infobox-summary .infobox-chevron::before {
   }
 }
 
+.recent-edits-panel,
+.attachments-panel {
+  margin-top: 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+}
+
+.recent-edits-panel h3,
+.attachments-panel h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.recent-edits-panel ul,
+.attachments-list {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.attachments-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.2rem 0;
+}
+
+.rename-move {
+  display: inline-block;
+}
+
+.rename-move-form {
+  margin-top: 0.5rem;
+  min-width: 320px;
+  max-width: 520px;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+}
+

@@ -35,11 +35,13 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 import auth
+import audit
 import backlinks
 import frontmatter
 import links
 import markdown_ext
 import nav
+import trash
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +59,8 @@ SITE_NAME = os.environ.get("SCRINIUM_SITE_NAME", "Scrinium")
 HTTPS_ONLY = os.environ.get("SCRINIUM_HTTPS_ONLY", "0") == "1"
 TRUST_PROXY = os.environ.get("SCRINIUM_TRUST_PROXY", "0") == "1"
 MAX_UPLOAD_MB = int(os.environ.get("SCRINIUM_MAX_UPLOAD_MB", "8"))
-APP_VERSION = "0.9.3"
+MAX_ATTACHMENT_MB = int(os.environ.get("SCRINIUM_MAX_ATTACHMENT_MB", "50"))
+APP_VERSION = "1.0.0"
 PROJECT_URL = "https://github.com/subnetmasked/Scrinium"
 AUTHOR_NAME = "subnetmasked"
 AUTHOR_URL = "https://github.com/subnetmasked"
@@ -102,8 +105,9 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=HTTPS_ONLY,
     PERMANENT_SESSION_LIFETIME=timedelta(days=14),
-    MAX_CONTENT_LENGTH=MAX_UPLOAD_MB * 1024 * 1024,
+    MAX_CONTENT_LENGTH=max(MAX_UPLOAD_MB, MAX_ATTACHMENT_MB) * 1024 * 1024,
     MAX_UPLOAD_MB=MAX_UPLOAD_MB,
+    MAX_ATTACHMENT_MB=MAX_ATTACHMENT_MB,
 )
 
 if TRUST_PROXY:
@@ -242,6 +246,15 @@ _ALLOWED_IMAGE_TYPES = {
 }
 
 
+def _attachment_settings() -> dict[str, Any]:
+    return auth.attachment_settings()
+
+
+def _allowed_attachment_exts() -> set[str]:
+    s = _attachment_settings()
+    return {str(ext).lower() for ext in s.get("extensions", [])}
+
+
 def attachment_rel_for(doc_rel_path: str, filename: str) -> str:
     parts = [p for p in doc_rel_path.split("/") if p]
     if len(parts) == 1:
@@ -254,6 +267,38 @@ def attachment_rel_for(doc_rel_path: str, filename: str) -> str:
 def attachment_dir_for(doc_rel_path: str) -> Path:
     rel = attachment_rel_for(doc_rel_path, "x").rsplit("/", 1)[0]
     return safe_join(rel)
+
+
+def _attachment_rel_from_doc(doc_rel_path: str, path: Path) -> str:
+    return attachment_rel_for(doc_rel_path, path.name)
+
+
+def list_doc_attachments(doc_rel_path: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    d = attachment_dir_for(doc_rel_path)
+    if not d.exists():
+        return out
+    for p in sorted(d.iterdir(), key=lambda x: x.name.lower()):
+        if not p.is_file():
+            continue
+        try:
+            st = p.stat()
+            size = st.st_size
+            mtime = st.st_mtime
+        except OSError:
+            size = 0
+            mtime = 0.0
+        rel = _attachment_rel_from_doc(doc_rel_path, p)
+        out.append(
+            {
+                "name": p.name,
+                "size": size,
+                "mtime": mtime,
+                "rel": rel,
+                "url": url_for("attachment", path=rel),
+            }
+        )
+    return out
 
 
 def _sniff_image(data: bytes) -> tuple[str, str] | None:
@@ -287,7 +332,13 @@ def _category_slugs() -> list[str]:
 def _user_dict(user: Any) -> Optional[dict]:
     if user is None:
         return None
-    return {"username": user["username"], "is_admin": bool(user["is_admin"])}
+    groups = [g["name"].lower() for g in auth.groups_for_user(int(user["id"]))]
+    return {
+        "id": int(user["id"]),
+        "username": user["username"],
+        "is_admin": bool(user["is_admin"]),
+        "groups": groups,
+    }
 
 
 def _accessible_doc_paths(user: Any | None = None) -> set[str]:
@@ -533,10 +584,17 @@ def login():
             user = auth.authenticate(username_value, password)
             if user is None:
                 auth.record_failure(rate_key)
+                audit.record("auth.login_fail", target=username_value)
                 error = "Invalid username or password."
             else:
                 auth.clear_failures(rate_key)
                 auth.login_session(user)
+                audit.record(
+                    "auth.login_ok",
+                    target=user["username"],
+                    actor=user["username"],
+                    actor_id=int(user["id"]),
+                )
                 return redirect(next_url)
     return render_template(
         "login.html",
@@ -548,6 +606,14 @@ def login():
 
 @app.route("/logout", methods=["POST"])
 def logout():
+    user = auth.current_user()
+    if user is not None:
+        audit.record(
+            "auth.logout",
+            target=user["username"],
+            actor=user["username"],
+            actor_id=int(user["id"]),
+        )
     auth.logout_session()
     return redirect(url_for("login"))
 
@@ -607,6 +673,12 @@ def settings():
                 if password != confirm:
                     raise ValueError("Passwords do not match.")
                 auth.set_password(user["id"], password)
+                audit.record(
+                    "auth.password_change",
+                    target=user["username"],
+                    actor=user["username"],
+                    actor_id=int(user["id"]),
+                )
                 notice = "Password updated."
             else:
                 raise ValueError("Unknown settings section.")
@@ -703,6 +775,9 @@ def view(path: str):
         title=str(fm.get("title") or target.stem),
         related_links=links.links_for_doc_path(path),
         backlinks=bl,
+        recent_edits=audit.for_doc(path, limit=3),
+        attachments=list_doc_attachments(path),
+        attachment_settings=_attachment_settings(),
     )
 
 
@@ -801,7 +876,13 @@ def edit(path: str):
         abort(404)
     if request.method == "POST":
         body = request.form.get("body", "")
+        before = target.read_text(encoding="utf-8")
         target.write_text(body, encoding="utf-8", newline="\n")
+        audit.record(
+            "doc.edit",
+            target=path,
+            details={"bytes_before": len(before), "bytes_after": len(body)},
+        )
         return redirect(url_for("view", path=path))
     body_text = target.read_text(encoding="utf-8")
     doc_category = frontmatter.infer_category(path, _category_slugs())
@@ -865,6 +946,7 @@ def new():
                     raise PathError(
                         f"Could not create folder. Check permissions for {DATA_DIR}."
                     ) from e
+                audit.record("doc.create", target="/".join(segments), details={"kind": "folder"})
                 return redirect(url_for("folder", path="/".join(segments)))
             leaf = segments[-1]
             if leaf.endswith(MD_EXT):
@@ -896,6 +978,7 @@ def new():
                 raise PathError(
                     f"Could not create document. Check permissions for {DATA_DIR}."
                 ) from e
+            audit.record("doc.create", target=doc_rel(target), details={"kind": "doc"})
             return redirect(url_for("edit", path=doc_rel(target)))
         except PathError as e:
             error = str(e)
@@ -957,6 +1040,11 @@ def entry_new(slug: str):
                 raise PathError(
                     f"Could not create {cat['noun']}: {e}"
                 ) from e
+            audit.record(
+                "doc.create",
+                target=f"{slug}/{name_value}/overview",
+                details={"kind": "entry_overview"},
+            )
             return redirect(url_for("folder", path=f"{slug}/{name_value}"))
         except PathError as e:
             error = str(e)
@@ -974,14 +1062,89 @@ def entry_new(slug: str):
 @require_doc_access
 def delete(path: str):
     target = safe_join(path + MD_EXT)
+    me = auth.current_user()
+    user_id = int(me["id"]) if me else None
     if target.is_file():
-        target.unlink()
+        trash_id = trash.move_to_trash(
+            data_dir=DATA_DIR,
+            config_dir=CONFIG_DIR,
+            original_rel=path,
+            kind="doc",
+            user_id=user_id,
+        )
+        audit.record("doc.delete", target=path, details={"kind": "doc", "trash_id": trash_id})
         return redirect(url_for("index"))
     folder_target = safe_join(path)
     if folder_target.is_dir():
-        shutil.rmtree(folder_target)
+        trash_id = trash.move_to_trash(
+            data_dir=DATA_DIR,
+            config_dir=CONFIG_DIR,
+            original_rel=path,
+            kind="folder",
+            user_id=user_id,
+        )
+        audit.record(
+            "doc.delete",
+            target=path,
+            details={"kind": "folder", "trash_id": trash_id},
+        )
         return redirect(url_for("index"))
     abort(404)
+
+
+@app.route("/mv/<path:path>", methods=["POST"])
+@require_doc_access
+def rename_move(path: str):
+    new_path = request.form.get("new_path", "")
+    try:
+        segments = parse_segments(new_path)
+    except PathError as e:
+        abort(400, str(e))
+    new_rel = "/".join(segments)
+    if path == new_rel:
+        return redirect(url_for("view", path=path) if safe_join(path + MD_EXT).is_file() else url_for("folder", path=path))
+
+    old_doc = safe_join(path + MD_EXT)
+    old_folder = safe_join(path)
+    is_doc = old_doc.is_file()
+    is_folder = old_folder.is_dir() and not is_doc
+    if not is_doc and not is_folder:
+        abort(404)
+    slug = nav.category_slug_for_path(new_rel)
+    if slug:
+        _check_category_access(slug)
+    if safe_join(new_rel + MD_EXT).exists() or safe_join(new_rel).exists():
+        abort(400, "Destination already exists.")
+
+    if is_doc:
+        new_doc_path = safe_join(new_rel + MD_EXT)
+        new_doc_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(old_doc), str(new_doc_path))
+        old_parts = [p for p in path.split("/") if p]
+        new_parts = [p for p in new_rel.split("/") if p]
+        if len(old_parts) == 1:
+            old_att = DATA_DIR / "_attachments" / old_parts[0]
+        else:
+            old_att = DATA_DIR / Path(*old_parts[:-1]) / "_attachments" / old_parts[-1]
+        if len(new_parts) == 1:
+            new_att = DATA_DIR / "_attachments" / new_parts[0]
+        else:
+            new_att = DATA_DIR / Path(*new_parts[:-1]) / "_attachments" / new_parts[-1]
+        if old_att.exists():
+            new_att.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(old_att), str(new_att))
+    else:
+        new_folder_path = safe_join(new_rel)
+        new_folder_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(old_folder), str(new_folder_path))
+
+    old_parent = path.rsplit("/", 1)[0] if "/" in path else ""
+    new_parent = new_rel.rsplit("/", 1)[0] if "/" in new_rel else ""
+    action = "doc.rename" if old_parent == new_parent else "doc.move"
+    audit.record(action, target=new_rel, details={"from": path, "to": new_rel})
+    if is_doc:
+        return redirect(url_for("view", path=new_rel))
+    return redirect(url_for("folder", path=new_rel))
 
 
 @app.route("/s")
@@ -1085,7 +1248,7 @@ def api_upload():
     data = upload.read()
     if not data:
         abort(400, "Empty file")
-    if len(data) > app.config["MAX_CONTENT_LENGTH"]:
+    if len(data) > app.config["MAX_UPLOAD_MB"] * 1024 * 1024:
         abort(413, "File too large")
 
     sniffed = _sniff_image(data)
@@ -1110,6 +1273,11 @@ def api_upload():
     out_path.write_bytes(data)
 
     rel = attachment_rel_for(doc_for, filename)
+    audit.record(
+        "attachment.upload",
+        target=rel,
+        details={"doc": doc_for, "mime": mime, "size": len(data), "image": True},
+    )
     return jsonify(
         {
             "filename": filename,
@@ -1118,6 +1286,78 @@ def api_upload():
             "markdown": f"![]({filename})",
         }
     )
+
+
+@app.route("/api/attach", methods=["POST"])
+@auth.login_required
+def api_attach():
+    s = _attachment_settings()
+    if not s.get("enabled"):
+        abort(403, "Attachments are disabled by admin.")
+    doc_for = (request.args.get("for") or "").strip().strip("/")
+    if not doc_for:
+        abort(400, "Missing ?for=<doc_rel>")
+    _check_path_access(doc_for)
+    target_md = safe_join(doc_for + MD_EXT)
+    if not target_md.is_file():
+        abort(404, "Document not found")
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        abort(400, "No file uploaded")
+    data = upload.read()
+    if not data:
+        abort(400, "Empty file")
+    max_bytes = int(s["max_mb"]) * 1024 * 1024
+    if len(data) > max_bytes:
+        abort(413, "File too large")
+    raw_name = secure_filename(upload.filename) or "attachment"
+    ext = Path(raw_name).suffix.lower()
+    if ext not in _allowed_attachment_exts():
+        abort(400, "Disallowed file type")
+    stem = Path(raw_name).stem
+    stem = re.sub(r"[^a-zA-Z0-9._-]+", "-", stem).strip("-") or "attachment"
+    dest_dir = attachment_dir_for(doc_for)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    filename = _unique_filename(dest_dir, stem, ext)
+    out_path = dest_dir / filename
+    out_path.write_bytes(data)
+    rel = attachment_rel_for(doc_for, filename)
+    audit.record(
+        "attachment.upload",
+        target=rel,
+        details={
+            "doc": doc_for,
+            "size": len(data),
+            "mime": upload.mimetype or "",
+            "image": False,
+        },
+    )
+    return jsonify(
+        {
+            "filename": filename,
+            "rel": rel,
+            "size": len(data),
+            "url": url_for("attachment", path=rel),
+        }
+    )
+
+
+@app.route("/attach/<path:path>/delete", methods=["POST"])
+@auth.login_required
+def attach_delete(path: str):
+    doc_for = doc_rel_from_attachment(path)
+    if doc_for:
+        _check_path_access(doc_for)
+    target = safe_join(path)
+    if not target.is_file() or "_attachments" not in path.split("/"):
+        abort(404)
+    target.unlink()
+    audit.record(
+        "attachment.delete",
+        target=path,
+        details={"doc": doc_for},
+    )
+    return redirect(url_for("view", path=doc_for)) if doc_for else redirect(url_for("index"))
 
 
 @app.route("/a/<path:path>")
@@ -1471,6 +1711,11 @@ def admin_users():
                     pw = request.form.get("password", "")
                     auth.require_password(pw)
                     auth.set_password(target_id, pw)
+                    audit.record(
+                        "auth.password_reset",
+                        target=target["username"],
+                        details={"target_user_id": target_id},
+                    )
                     notice = f"Password updated for {target['username']!r}."
                 elif action == "toggle_admin":
                     will_be_admin = not bool(target["is_admin"])
@@ -1528,6 +1773,12 @@ def admin_categories():
                 or request.form.getlist("allowed_users")
             )
 
+        def _parse_allowed_groups() -> list[str]:
+            return nav._normalize_allowed_groups(
+                request.form.getlist("allowed_groups[]")
+                or request.form.getlist("allowed_groups")
+            )
+
         try:
             if action == "create":
                 name = (request.form.get("name") or "").strip()
@@ -1537,6 +1788,7 @@ def admin_categories():
                 icon = _icon_or_default(request.form.get("icon"))
                 restricted = bool(request.form.get("restricted"))
                 allowed_users = _parse_allowed_users()
+                allowed_groups = _parse_allowed_groups()
                 if not name:
                     raise ValueError("Name is required.")
                 slug = nav.normalize_slug(slug_input or name)
@@ -1556,6 +1808,7 @@ def admin_categories():
                         "description": description,
                         "restricted": restricted,
                         "allowed_users": allowed_users,
+                        "allowed_groups": allowed_groups,
                     }
                 )
                 nav.save_categories(CONFIG_DIR, cats)
@@ -1577,6 +1830,7 @@ def admin_categories():
                 target["description"] = description
                 target["restricted"] = bool(request.form.get("restricted"))
                 target["allowed_users"] = _parse_allowed_users()
+                target["allowed_groups"] = _parse_allowed_groups()
                 nav.save_categories(CONFIG_DIR, cats)
                 notice = f"Category {name!r} updated."
             elif action == "reorder_full":
@@ -1648,6 +1902,7 @@ def admin_categories():
         "admin_categories.html",
         categories=folder_status,
         all_users=auth.list_users(),
+        all_groups=auth.list_groups(),
         error=error,
         notice=notice,
     )
@@ -1727,6 +1982,176 @@ def admin_ldap():
         error=error,
         notice=notice,
         test_result=test_result,
+    )
+
+
+@app.route("/admin/audit")
+@auth.admin_required
+def admin_audit():
+    page = max(1, int(request.args.get("page") or 1))
+    per_page = 50
+    filters = {
+        "action": (request.args.get("action") or "").strip(),
+        "actor": (request.args.get("actor") or "").strip(),
+        "target": (request.args.get("target") or "").strip(),
+        "since": (request.args.get("since") or "").strip(),
+        "until": (request.args.get("until") or "").strip(),
+    }
+    rows = audit.query(
+        action=filters["action"] or None,
+        actor=filters["actor"] or None,
+        target_like=filters["target"] or None,
+        since=filters["since"] or None,
+        until=filters["until"] or None,
+        limit=per_page,
+        offset=(page - 1) * per_page,
+    )
+    return render_template(
+        "admin_audit.html",
+        rows=rows,
+        page=page,
+        per_page=per_page,
+        filters=filters,
+    )
+
+
+@app.route("/admin/attachments", methods=["GET", "POST"])
+@auth.admin_required
+def admin_attachments():
+    error = None
+    notice = None
+    if request.method == "POST":
+        try:
+            auth.save_attachment_settings(request.form)
+            s = auth.attachment_settings()
+            app.config["MAX_ATTACHMENT_MB"] = int(s["max_mb"])
+            app.config["MAX_CONTENT_LENGTH"] = (
+                max(app.config["MAX_UPLOAD_MB"], app.config["MAX_ATTACHMENT_MB"])
+                * 1024
+                * 1024
+            )
+            notice = "Attachment settings saved."
+        except ValueError as e:
+            error = str(e)
+    return render_template(
+        "admin_attachments.html",
+        settings=auth.attachment_settings(),
+        error=error,
+        notice=notice,
+    )
+
+
+@app.route("/admin/trash", methods=["GET", "POST"])
+@auth.admin_required
+def admin_trash():
+    error = None
+    notice = None
+    if request.method == "POST":
+        action = request.form.get("action") or ""
+        try:
+            if action == "restore":
+                trash_id = int(request.form.get("trash_id") or 0)
+                ok, msg = trash.restore(data_dir=DATA_DIR, trash_id=trash_id)
+                if not ok:
+                    raise ValueError(msg)
+                audit.record("doc.restore", target=msg, details={"trash_id": trash_id})
+                notice = f"Restored {msg!r}."
+            elif action == "purge":
+                trash_id = int(request.form.get("trash_id") or 0)
+                row = trash.get_trash(trash_id)
+                if row is None or not trash.purge(trash_id):
+                    raise ValueError("Trash item not found.")
+                audit.record(
+                    "doc.purge",
+                    target=row["original_rel"],
+                    details={"trash_id": trash_id},
+                )
+                notice = "Item permanently deleted."
+            elif action == "empty":
+                count = trash.empty_all()
+                audit.record("doc.purge", target="*", details={"emptied": count})
+                notice = f"Trash emptied ({count} item(s))."
+            else:
+                raise ValueError("Unknown action.")
+        except ValueError as e:
+            error = str(e)
+    return render_template(
+        "admin_trash.html",
+        items=trash.list_trash(),
+        error=error,
+        notice=notice,
+    )
+
+
+@app.route("/admin/groups", methods=["GET", "POST"])
+@auth.admin_required
+def admin_groups():
+    error = None
+    notice = None
+    if request.method == "POST":
+        action = request.form.get("action") or ""
+        try:
+            if action == "create":
+                name = request.form.get("name", "")
+                desc = request.form.get("description", "")
+                gid = auth.create_group(name, desc)
+                audit.record("group.create", target=name.strip(), details={"group_id": gid})
+                notice = "Group created."
+            elif action == "delete":
+                gid = int(request.form.get("group_id") or 0)
+                g = auth.get_group(gid)
+                if g is None:
+                    raise ValueError("Group not found.")
+                auth.delete_group(gid)
+                audit.record("group.delete", target=g["name"], details={"group_id": gid})
+                notice = "Group deleted."
+            elif action == "add_member":
+                gid = int(request.form.get("group_id") or 0)
+                uid = int(request.form.get("user_id") or 0)
+                g = auth.get_group(gid)
+                u = auth.get_user(uid)
+                if g is None or u is None:
+                    raise ValueError("Group or user not found.")
+                auth.add_user_to_group(uid, gid)
+                audit.record(
+                    "group.member_add",
+                    target=g["name"],
+                    details={"user": u["username"], "user_id": uid, "group_id": gid},
+                )
+                notice = "Member added."
+            elif action == "remove_member":
+                gid = int(request.form.get("group_id") or 0)
+                uid = int(request.form.get("user_id") or 0)
+                g = auth.get_group(gid)
+                u = auth.get_user(uid)
+                if g is None or u is None:
+                    raise ValueError("Group or user not found.")
+                auth.remove_user_from_group(uid, gid)
+                audit.record(
+                    "group.member_remove",
+                    target=g["name"],
+                    details={"user": u["username"], "user_id": uid, "group_id": gid},
+                )
+                notice = "Member removed."
+            else:
+                raise ValueError("Unknown action.")
+        except ValueError as e:
+            error = str(e)
+    groups = auth.list_groups()
+    grouped: list[dict[str, Any]] = []
+    for g in groups:
+        grouped.append(
+            {
+                "group": g,
+                "members": auth.members_of_group(int(g["id"])),
+            }
+        )
+    return render_template(
+        "admin_groups.html",
+        grouped=grouped,
+        users=auth.list_users(),
+        error=error,
+        notice=notice,
     )
 
 

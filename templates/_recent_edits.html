@@ -1,0 +1,14 @@
+{% if recent_edits %}
+  <section class="recent-edits-panel">
+    <h3>Recent edits</h3>
+    <ul>
+      {% for e in recent_edits %}
+        <li>
+          <strong>{{ e.actor or 'system' }}</strong>
+          <span class="muted">{{ e.action }}</span>
+          <span class="muted">{{ e.ts }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}

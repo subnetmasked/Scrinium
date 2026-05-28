@@ -14,6 +14,7 @@
     </nav>
     <div class="doc-actions">
       <a class="btn" href="{{ url_for('edit', path=rel) }}">Edit</a>
+      {% include "_rename_form.html" %}
       <form action="{{ url_for('delete', path=rel) }}" method="post"
             onsubmit="return confirm('Delete this document?');">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -29,6 +30,8 @@
       <article class="doc-body">
         {{ html | safe }}
       </article>
+      {% include "_recent_edits.html" %}
+      {% include "_attachments.html" %}
       {% include "_backlinks.html" %}
     </div>
     {% with fm=fm, fm_rows=fm_rows, title=title, rel=rel %}

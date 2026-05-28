@@ -45,6 +45,18 @@
           </label>
         {% endfor %}
       </div>
+      <div class="allowed-users-list">
+        <p class="adm-help muted small">Allowed groups:</p>
+        {% set allowed_groups = cat.allowed_groups or [] %}
+        {% for g in all_groups %}
+          {% set gname = g.name | lower %}
+          <label class="inline">
+            <input type="checkbox" name="allowed_groups[]" value="{{ g.name }}"
+                   {% if gname in allowed_groups %}checked{% endif %}>
+            {{ g.name }}
+          </label>
+        {% endfor %}
+      </div>
     </fieldset>
   {%- endmacro %}
 
@@ -93,6 +105,15 @@
               <input type="checkbox" name="allowed_users[]" value="{{ u.username }}"
                      {% if u.is_admin %}checked disabled{% endif %}>
               {{ u.username }}{% if u.is_admin %} <span class="muted small">(admin)</span>{% endif %}
+            </label>
+          {% endfor %}
+        </div>
+        <div class="allowed-users-list">
+          <p class="adm-help muted small">Allowed groups:</p>
+          {% for g in all_groups %}
+            <label class="inline">
+              <input type="checkbox" name="allowed_groups[]" value="{{ g.name }}">
+              {{ g.name }}
             </label>
           {% endfor %}
         </div>

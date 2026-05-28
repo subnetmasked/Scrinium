@@ -25,6 +25,7 @@
         <a class="btn primary" href="{{ url_for('entry_new', slug=category.slug) }}">+ Add {{ category.noun }}</a>
       {% elif is_entry %}
         <a class="btn primary" href="{{ url_for('new', folder=rel) }}">+ Add doc</a>
+        {% include "_rename_form.html" %}
         {% if overview_rel %}
           <a class="btn" href="{{ url_for('edit', path=overview_rel) }}">Edit overview</a>
         {% endif %}
@@ -35,6 +36,7 @@
         </form>
       {% else %}
         <a class="btn" href="{{ url_for('new', folder=rel) }}">+ New here</a>
+        {% include "_rename_form.html" %}
         <form action="{{ url_for('delete', path=rel) }}" method="post"
               onsubmit="return confirm('Delete this folder and EVERYTHING in it?');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -1,0 +1,22 @@
+<section class="attachments-panel">
+  <h3>Attachments</h3>
+  {% if attachments %}
+    <ul class="attachments-list">
+      {% for a in attachments %}
+        <li>
+          <a href="{{ a.url }}">{{ a.name }}</a>
+          <span class="muted small">{{ a.size }} B</span>
+          <form method="post" action="{{ url_for('attach_delete', path=a.rel) }}" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn small danger" type="submit">Delete</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No attachments yet.</p>
+  {% endif %}
+  {% if attachment_settings.enabled %}
+    <p class="muted small">Use the editor's <strong>+ Attachment</strong> button to upload.</p>
+  {% endif %}
+</section>

@@ -35,8 +35,8 @@ with optional **LDAP / Active Directory** auth. Plain `.md` files on disk
 | **Server-rendered**     | Flask + Pygments + vanilla CSS/JS. No SPA, no build step, no bundler.                    |
 | **Login-gated**         | scrypt-hashed local users, optional LDAP bind auth, per-IP + per-username rate-limit.    |
 | **Themable**            | Dark / light / system theme per user. Bundled sans + mono fonts, including **Nerd Fonts**. |
-| **Admin panel**         | Users, categories, LDAP, appearance, and backup — all in the UI.                         |
-| **Per-category access** | Restrict a category to selected users; admins always have access.                        |
+| **Admin panel**         | Users, categories, groups, LDAP, appearance, attachments, audit, trash, backup — all in the UI. |
+| **Per-category access** | Restrict a category to selected users and/or groups; admins always have access.          |
 | **Home dashboard**      | At-a-glance stats, quick actions, recent docs, recent entries, tag cloud, pinned welcome. |
 | **Links dashboard**     | Shared wiki-style grid of tool/service bookmarks, with auto-fetched favicons.            |
 | **Obsidian-style**      | YAML frontmatter, `[[wikilinks]]`, backlinks panel, image paste/drop.                    |
@@ -111,6 +111,7 @@ internal deployment.
 | `SCRINIUM_HTTPS_ONLY`   | `0`                | `1` to set `Secure` on cookies         |
 | `SCRINIUM_TRUST_PROXY`  | `0`                | `1` if behind a reverse proxy          |
 | `SCRINIUM_MAX_UPLOAD_MB` | `8`               | Max image upload size (MB)             |
+| `SCRINIUM_MAX_ATTACHMENT_MB` | `50`         | Max general attachment size (MB) seed  |
 
 **Where state lives** (`SCRINIUM_CONFIG`, default `data/.scrinium/`):
 
@@ -232,6 +233,12 @@ rewrites it to a login-gated `/a/...` URL at render time.
 Allowed types: PNG, JPEG, WebP, GIF. (SVG is intentionally disallowed.)
 Size cap from `SCRINIUM_MAX_UPLOAD_MB`, default 8 MB.
 
+### Attachments upload
+
+In the editor, use **+ Attachment** to upload non-inline files (PDF, Office,
+archives, logs, media, etc.) next to the doc's attachment directory. Allowed
+extensions and max size are configured in **Admin → Attachments**.
+
 ### Links dashboard
 
 `/dash` is a separate, shared dashboard for the kind of links that
@@ -288,9 +295,13 @@ panel is a sidebar of sections:
 | Section         | What you can do                                                                                                                                        |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Users**       | Add local users, toggle the admin flag, set new passwords, or delete accounts. The last admin can't be demoted or deleted; you can't delete yourself.  |
-| **Categories**  | Define sidebar sections: name, slug, *noun* used in buttons (e.g. "server"), icon, description. Mark a category **Restricted** to gate it to selected users. Drag cards to reorder (saved instantly via XHR). |
+| **Categories**  | Define sidebar sections: name, slug, *noun* used in buttons (e.g. "server"), icon, description. Mark a category **Restricted** and gate it to selected users and groups. Drag cards to reorder (saved instantly via XHR). |
+| **Groups**      | Create reusable access groups and manage memberships. Use groups in category restrictions. |
 | **LDAP**        | Enable LDAP, configure server URI, optional bind DN/password, search base, user filter (`{username}` placeholder), StartTLS, cert verification, auto-provisioning. **Test connection** before saving. |
 | **Appearance**  | Override `SCRINIUM_SITE_NAME`, pick bundled sans + mono fonts (Inter, IBM Plex, **JetBrains Mono Nerd Font**, **FiraCode Nerd Font**), set the default theme for new users, and toggle features: code-block copy, line numbers, compact density, tag cloud visibility, broken-wikilink warnings. |
+| **Attachments** | Configure attachment uploads: enabled flag, extension allowlist, and max size (MB). |
+| **Audit**       | Searchable admin log of authentication, document edits/moves/deletes/restores, and attachment operations. |
+| **Trash**       | Soft-deleted docs/folders waiting for restore or permanent purge. |
 | **Backup**      | Stream a single zip of every markdown file and attachment.                                                                                             |
 
 Fonts are bundled in `static/fonts/` — no outbound network from the
@@ -317,7 +328,7 @@ stays managed by your directory.
 
 By default, every signed-in user can read and edit every document.
 Admins can mark a category **Restricted** so that only selected
-usernames (plus all admins) can:
+usernames and/or groups (plus all admins) can:
 
 - see the category in the sidebar,
 - visit the category landing page or any entry inside it,
@@ -523,7 +534,7 @@ SCRINIUM_DATA=./data python app.py
 ```
 
 Health check at <http://localhost:8080/health> returns
-`{"data":"./data","ok":true,"version":"0.9.3"}`.
+`{"data":"./data","ok":true,"version":"1.0.0"}`.
 
 ---
 
@@ -601,7 +612,7 @@ For a strictly internal VM accessed by IP, leave the defaults alone.
 ```bash
 podman-compose up -d --build
 curl -s http://127.0.0.1:8080/health
-# expect: {"data":"/data","ok":true,"version":"0.9.3"}
+# expect: {"data":"/data","ok":true,"version":"1.0.0"}
 ```
 
 ### 7. Open the firewall

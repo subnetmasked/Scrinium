@@ -1,0 +1,51 @@
+{% extends "admin_base.html" %}
+{% block title %}Audit — Admin — {{ site_name }}{% endblock %}
+{% block admin_body %}
+  <header class="adm-header">
+    <div>
+      <h1>Audit</h1>
+      <p class="adm-help muted">Recent security and content activity.</p>
+    </div>
+  </header>
+
+  <article class="doc-body adm-card">
+    <form method="get" action="{{ url_for('admin_audit') }}" class="form search-form">
+      <div class="form-row">
+        <label><span>Action</span><input name="action" value="{{ filters.action }}"></label>
+        <label><span>Actor</span><input name="actor" value="{{ filters.actor }}"></label>
+      </div>
+      <div class="form-row">
+        <label><span>Target contains</span><input name="target" value="{{ filters.target }}"></label>
+        <label><span>Since</span><input type="date" name="since" value="{{ filters.since }}"></label>
+        <label><span>Until</span><input type="date" name="until" value="{{ filters.until }}"></label>
+      </div>
+      <div class="form-actions"><button class="btn" type="submit">Filter</button></div>
+    </form>
+
+    <table class="data-table">
+      <thead><tr><th>Time</th><th>Actor</th><th>IP</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td class="small">{{ (r.ts or '')[:19].replace('T', ' ') }}</td>
+            <td>{{ r.actor or 'system' }}</td>
+            <td class="small">{{ r.ip or '—' }}</td>
+            <td><code>{{ r.action }}</code></td>
+            <td class="small">{{ r.target or '—' }}</td>
+            <td class="small"><code>{{ r.details }}</code></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="muted">No rows match your filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="form-actions">
+      {% if page > 1 %}
+        <a class="btn" href="{{ url_for('admin_audit', page=page-1, action=filters.action, actor=filters.actor, target=filters.target, since=filters.since, until=filters.until) }}">Previous</a>
+      {% endif %}
+      {% if rows|length >= per_page %}
+        <a class="btn" href="{{ url_for('admin_audit', page=page+1, action=filters.action, actor=filters.actor, target=filters.target, since=filters.since, until=filters.until) }}">Next</a>
+      {% endif %}
+    </div>
+  </article>
+{% endblock %}

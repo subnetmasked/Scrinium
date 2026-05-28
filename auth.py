@@ -6,6 +6,7 @@ Passwords are hashed with Werkzeug's default scrypt; LDAP binds use ldap3.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import sqlite3
 import time
@@ -41,6 +42,42 @@ CREATE TABLE IF NOT EXISTS config (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS audit_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        TEXT NOT NULL,
+    actor     TEXT,
+    actor_id  INTEGER,
+    ip        TEXT,
+    action    TEXT NOT NULL,
+    target    TEXT,
+    details   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log (target);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log (action);
+CREATE TABLE IF NOT EXISTS groups (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT UNIQUE NOT NULL COLLATE NOCASE,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_groups (
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    group_id  INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, group_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_groups_user ON user_groups (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_groups_group ON user_groups (group_id);
+CREATE TABLE IF NOT EXISTS trash (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_rel TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    trashed_path TEXT NOT NULL,
+    deleted_at   TEXT NOT NULL,
+    deleted_by   INTEGER,
+    size_bytes   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_trash_deleted_at ON trash (deleted_at DESC);
 """
 
 
@@ -257,6 +294,45 @@ FEATURE_DEFAULTS: dict = {
     "show_tag_cloud": True,
 }
 
+ATTACHMENT_DEFAULTS: dict = {
+    "enabled": True,
+    "max_mb": int(os.environ.get("SCRINIUM_MAX_ATTACHMENT_MB", "50")),
+    "extensions": [
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+        ".odt",
+        ".ods",
+        ".odp",
+        ".txt",
+        ".csv",
+        ".log",
+        ".md",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".7z",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif",
+        ".mp3",
+        ".wav",
+        ".ogg",
+        ".mp4",
+        ".webm",
+        ".mov",
+    ],
+}
+
 FONT_CHOICES_SANS: dict[str, str] = {
     "system": "System default",
     "inter": "Inter",
@@ -327,6 +403,133 @@ def save_feature_flags(form: dict) -> None:
         key: bool(form.get(key)) for key in FEATURE_DEFAULTS
     }
     set_config("features", cleaned)
+
+
+def _normalize_extensions(value: object) -> list[str]:
+    if isinstance(value, str):
+        items = [line.strip() for line in value.replace(",", "\n").splitlines()]
+    elif isinstance(value, list):
+        items = [str(v).strip() for v in value]
+    else:
+        items = []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not item:
+            continue
+        if not item.startswith("."):
+            item = "." + item
+        item = item.lower()
+        if len(item) < 2 or any(ch.isspace() for ch in item):
+            continue
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def attachment_settings() -> dict:
+    saved = get_config("attachments") or {}
+    out = dict(ATTACHMENT_DEFAULTS)
+    out.update(saved)
+    out["enabled"] = bool(out.get("enabled"))
+    try:
+        out["max_mb"] = max(1, min(1024, int(out.get("max_mb") or 50)))
+    except (TypeError, ValueError):
+        out["max_mb"] = ATTACHMENT_DEFAULTS["max_mb"]
+    exts = _normalize_extensions(out.get("extensions"))
+    out["extensions"] = exts or list(ATTACHMENT_DEFAULTS["extensions"])
+    return out
+
+
+def save_attachment_settings(form: dict) -> None:
+    enabled = bool(form.get("enabled"))
+    try:
+        max_mb = int(form.get("max_mb") or ATTACHMENT_DEFAULTS["max_mb"])
+    except ValueError:
+        max_mb = ATTACHMENT_DEFAULTS["max_mb"]
+    max_mb = max(1, min(1024, max_mb))
+    extensions = _normalize_extensions(form.get("extensions"))
+    if not extensions:
+        extensions = list(ATTACHMENT_DEFAULTS["extensions"])
+    set_config(
+        "attachments",
+        {"enabled": enabled, "max_mb": max_mb, "extensions": extensions},
+    )
+
+
+def list_groups() -> list[sqlite3.Row]:
+    with _conn() as c:
+        return list(c.execute("SELECT * FROM groups ORDER BY name COLLATE NOCASE"))
+
+
+def get_group(group_id: int) -> Optional[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute("SELECT * FROM groups WHERE id = ?", (group_id,)).fetchone()
+
+
+def create_group(name: str, description: str = "") -> int:
+    cleaned = require_username(name)
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO groups (name, description, created_at) VALUES (?, ?, ?)",
+            (cleaned, (description or "").strip(), now),
+        )
+        return cur.lastrowid
+
+
+def delete_group(group_id: int) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM groups WHERE id = ?", (group_id,))
+
+
+def group_by_name(name: str) -> Optional[sqlite3.Row]:
+    with _conn() as c:
+        return c.execute(
+            "SELECT * FROM groups WHERE name = ? COLLATE NOCASE",
+            ((name or "").strip(),),
+        ).fetchone()
+
+
+def add_user_to_group(user_id: int, group_id: int) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO user_groups (user_id, group_id) VALUES (?, ?)",
+            (user_id, group_id),
+        )
+
+
+def remove_user_from_group(user_id: int, group_id: int) -> None:
+    with _conn() as c:
+        c.execute(
+            "DELETE FROM user_groups WHERE user_id = ? AND group_id = ?",
+            (user_id, group_id),
+        )
+
+
+def groups_for_user(user_id: int) -> list[sqlite3.Row]:
+    with _conn() as c:
+        return list(
+            c.execute(
+                "SELECT g.* FROM groups g "
+                "JOIN user_groups ug ON ug.group_id = g.id "
+                "WHERE ug.user_id = ? ORDER BY g.name COLLATE NOCASE",
+                (user_id,),
+            )
+        )
+
+
+def members_of_group(group_id: int) -> list[sqlite3.Row]:
+    with _conn() as c:
+        return list(
+            c.execute(
+                "SELECT u.* FROM users u "
+                "JOIN user_groups ug ON ug.user_id = u.id "
+                "WHERE ug.group_id = ? ORDER BY u.username COLLATE NOCASE",
+                (group_id,),
+            )
+        )
 
 
 def font_css_variables(appearance: Optional[dict] = None) -> str:
@@ -742,4 +945,16 @@ __all__: Iterable[str] = (
     "FONT_CHOICES_MONO",
     "APPEARANCE_DEFAULTS",
     "FEATURE_DEFAULTS",
+    "ATTACHMENT_DEFAULTS",
+    "attachment_settings",
+    "save_attachment_settings",
+    "list_groups",
+    "get_group",
+    "create_group",
+    "delete_group",
+    "group_by_name",
+    "add_user_to_group",
+    "remove_user_from_group",
+    "groups_for_user",
+    "members_of_group",
 )

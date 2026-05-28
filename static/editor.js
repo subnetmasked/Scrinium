@@ -8,6 +8,8 @@
   const fmBtn = document.getElementById("insert-fm");
   const fmTpl = document.getElementById("fm-template-data");
   const wikiBtn = document.getElementById("wrap-wikilink");
+  const attachBtn = document.getElementById("pick-attachment");
+  const attachInput = document.getElementById("attachment-input");
   if (!ta) return;
 
   const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
@@ -185,6 +187,35 @@
       handleFiles(fileInput.files, false);
       fileInput.value = "";
     }
+  });
+
+  async function uploadAttachment(file) {
+    const fd = new FormData();
+    fd.append("file", file, file.name || "attachment.bin");
+    const res = await fetch(`/api/attach?for=${encodeURIComponent(docRel)}`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrf() },
+      body: fd,
+    });
+    if (!res.ok) {
+      const msg = await res.text();
+      throw new Error(msg || `Upload failed (${res.status})`);
+    }
+    return res.json();
+  }
+
+  attachBtn?.addEventListener("click", () => attachInput?.click());
+  attachInput?.addEventListener("change", async () => {
+    if (!attachInput.files?.length) return;
+    for (const file of attachInput.files) {
+      try {
+        await uploadAttachment(file);
+      } catch (err) {
+        window.alert(`Attachment upload failed: ${err.message}`);
+      }
+    }
+    attachInput.value = "";
+    window.alert("Attachment upload complete. Open the document view to see files.");
   });
 
   let previewing = false;

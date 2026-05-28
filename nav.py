@@ -216,12 +216,28 @@ def load_categories(config_dir: Path) -> list[dict]:
                 "allowed_users": _normalize_allowed_users(
                     entry.get("allowed_users")
                 ),
+                "allowed_groups": _normalize_allowed_groups(
+                    entry.get("allowed_groups")
+                ),
             }
         )
     return cleaned
 
 
 def _normalize_allowed_users(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        name = str(item).strip().lower()
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
+def _normalize_allowed_groups(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     out: list[str] = []
@@ -254,6 +270,9 @@ def save_categories(config_dir: Path, categories: list[dict]) -> None:
                 "restricted": bool(c.get("restricted")),
                 "allowed_users": _normalize_allowed_users(
                     c.get("allowed_users")
+                ),
+                "allowed_groups": _normalize_allowed_groups(
+                    c.get("allowed_groups")
                 ),
             }
         )
@@ -288,7 +307,11 @@ def user_can_access_category(
     if not user:
         return False
     allowed = {u.lower() for u in cat.get("allowed_users") or []}
-    return user["username"].lower() in allowed
+    if user["username"].lower() in allowed:
+        return True
+    allowed_groups = {g.lower() for g in cat.get("allowed_groups") or []}
+    user_groups = {g.lower() for g in user.get("groups") or []}
+    return bool(allowed_groups & user_groups)
 
 
 def accessible_category_slugs(
@@ -824,4 +847,5 @@ __all__: Iterable[str] = (
     "relative_time",
     "dashboard_data",
     "find_entries_with_tag",
+    "_normalize_allowed_groups",
 )

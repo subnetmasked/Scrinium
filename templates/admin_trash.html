@@ -1,0 +1,49 @@
+{% extends "admin_base.html" %}
+{% block title %}Trash — Admin — {{ site_name }}{% endblock %}
+{% block admin_body %}
+  <header class="adm-header">
+    <div>
+      <h1>Trash</h1>
+      <p class="adm-help muted">Restore or permanently purge deleted items.</p>
+    </div>
+  </header>
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="alert">{{ notice }}</div>{% endif %}
+  <article class="doc-body adm-card">
+    <table class="data-table">
+      <thead><tr><th>Path</th><th>Kind</th><th>Deleted by</th><th>Deleted at</th><th>Size</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for i in items %}
+          <tr>
+            <td><code>{{ i.original_rel }}</code></td>
+            <td>{{ i.kind }}</td>
+            <td>{{ i.deleted_by_name or '—' }}</td>
+            <td class="small">{{ (i.deleted_at or '')[:19].replace('T', ' ') }}</td>
+            <td class="small">{{ i.size_bytes }} B</td>
+            <td class="row-actions">
+              <form method="post" action="{{ url_for('admin_trash') }}" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="restore">
+                <input type="hidden" name="trash_id" value="{{ i.id }}">
+                <button class="btn small" type="submit">Restore</button>
+              </form>
+              <form method="post" action="{{ url_for('admin_trash') }}" class="inline-form" onsubmit="return confirm('Permanently purge this item?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="purge">
+                <input type="hidden" name="trash_id" value="{{ i.id }}">
+                <button class="btn small danger" type="submit">Purge</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="muted">Trash is empty.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="{{ url_for('admin_trash') }}" onsubmit="return confirm('Empty trash permanently?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="empty">
+      <div class="form-actions"><button class="btn danger" type="submit">Empty trash</button></div>
+    </form>
+  </article>
+{% endblock %}

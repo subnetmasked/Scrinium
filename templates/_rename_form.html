@@ -1,0 +1,14 @@
+<details class="rename-move">
+  <summary class="btn">Rename / Move</summary>
+  <form class="rename-move-form" method="post" action="{{ url_for('rename_move', path=rel) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>
+      <span>New path</span>
+      <input type="text" name="new_path" required value="{{ rel }}" spellcheck="false">
+    </label>
+    <p class="muted small">Wikilinks to this path are not auto-rewritten.</p>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Apply</button>
+    </div>
+  </form>
+</details>

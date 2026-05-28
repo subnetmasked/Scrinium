@@ -21,6 +21,8 @@
               title="Wrap selection in [[ ]] to make a wikilink (Ctrl+K)">[[ ]]</button>
       <button class="btn" type="button" id="pick-image">+ Image</button>
       <input type="file" id="image-input" accept="image/*" multiple hidden>
+      <button class="btn" type="button" id="pick-attachment">+ Attachment</button>
+      <input type="file" id="attachment-input" hidden>
       <button class="btn" type="button" id="toggle-preview">Preview</button>
       <button class="btn primary" form="edit-form" type="submit">Save</button>
       <a class="btn" href="{{ url_for('view', path=rel) }}">Cancel</a>
