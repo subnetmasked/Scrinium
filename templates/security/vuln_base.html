@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body_class %}area-security{% endblock %}
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='security.css') }}?v={{ app_version }}">
+{% endblock %}
+{% block content %}
+<div class="sec-shell">
+  {% include "security/_vuln_nav.html" %}
+  {% block vuln_body %}{% endblock %}
+</div>
+{% endblock %}

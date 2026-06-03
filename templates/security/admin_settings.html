@@ -1,0 +1,116 @@
+{% extends "admin_base.html" %}
+{% block title %}Security — Admin — {{ site_name }}{% endblock %}
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='security.css') }}?v={{ app_version }}">
+{% endblock %}
+{% block admin_body %}
+  <header class="adm-header">
+    <div>
+      <h1>Security</h1>
+      <p class="adm-help muted">Package roles, vulnerability module, scanner API, and SLA targets.</p>
+    </div>
+  </header>
+
+  {% if error %}<p class="flash error">{{ error }}</p>{% endif %}
+  {% if notice %}<p class="flash ok">{{ notice }}</p>{% endif %}
+  {% if scanner_test %}
+    <p class="flash {% if scanner_ok %}ok{% else %}error{% endif %}">{{ scanner_test }}</p>
+  {% endif %}
+
+  <div class="sec-admin-grid">
+    <article class="sec-admin-card">
+      <h2>Package access</h2>
+      <form method="post" action="{{ url_for('packages_admin.package_admin', package_id='security') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="save_package">
+        <label class="check-row">
+          <input type="checkbox" name="enabled" {% if config.enabled %}checked{% endif %}>
+          <span>Enable Security package</span>
+        </label>
+        <h3>Role mapping</h3>
+        <p class="muted small">Create groups under Admin → Groups, then list them here (one group name per line).</p>
+        <div class="sec-admin-scanner">
+          {% for role in package.roles %}
+            <label class="full-width">
+              <span>{{ role.name }}</span>
+              <textarea name="groups_{{ role.id }}" rows="2" placeholder="security-{{ role.id }}s">{% for g in (config.roles.get(role.id, {}).get('groups') or []) %}{{ g }}{% if not loop.last %}
+{% endif %}{% endfor %}</textarea>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="form-actions"><button class="btn primary" type="submit">Save package settings</button></div>
+      </form>
+    </article>
+
+    {% if config.enabled %}
+    <article class="sec-admin-card">
+      <h2>Vulnerability Manager</h2>
+      <form method="post" action="{{ url_for('packages_admin.package_admin', package_id='security') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="save_vuln_module">
+        <label class="check-row">
+          <input type="checkbox" name="vuln_enabled" {% if vuln_cfg.enabled %}checked{% endif %}>
+          <span>Enable Vulnerability Manager module</span>
+        </label>
+        <div class="sec-admin-scanner" style="margin-top:0.75rem">
+          <label><span>Sync interval (minutes)</span>
+            <input type="number" name="sync_interval_minutes" min="0" value="{{ vuln_cfg.sync_interval_minutes or 0 }}">
+            <span class="muted small">0 = manual sync only</span>
+          </label>
+        </div>
+        <h3>SLA — days to remediate</h3>
+        <div class="sec-admin-sla">
+          {% for sev in ['critical','high','medium','low','info'] %}
+            <label><span>{{ sev }}</span>
+              <input type="number" name="sla_{{ sev }}" min="1" value="{{ (vuln_cfg.sla or {}).get(sev, 90) }}">
+            </label>
+          {% endfor %}
+        </div>
+        <h3>Scanner API</h3>
+        <p class="muted small">Generic REST integration — no vendor-specific names in the UI.</p>
+        <div class="sec-admin-scanner">
+          <label class="full-width"><span>Base URL</span><input name="base_url" value="{{ scanner_cfg.base_url }}" placeholder="https://scanner.example/api"></label>
+          <label><span>Auth mode</span>
+            <select name="auth_mode">
+              {% for m in ['none','api_key','bearer','basic','login'] %}
+                <option value="{{ m }}" {% if scanner_cfg.auth_mode == m %}selected{% endif %}>{{ m }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label><span>Pagination</span>
+            <select name="pagination">
+              {% for p in ['none','page','offset','cursor'] %}
+                <option value="{{ p }}" {% if scanner_cfg.pagination == p %}selected{% endif %}>{{ p }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label><span>List endpoint</span><input name="list_endpoint" value="{{ scanner_cfg.list_endpoint }}"></label>
+          <label><span>Results path</span><input name="results_path" value="{{ scanner_cfg.results_path }}" placeholder="data.items"></label>
+          <label><span>API key header</span><input name="api_key_header" value="{{ scanner_cfg.api_key_header }}"></label>
+          <label><span>API key value</span><input name="api_key_value" type="password" placeholder="{% if scanner_cfg.api_key_value %}••••••••{% endif %}"></label>
+          <label><span>Bearer token</span><input name="bearer_token" type="password" placeholder="{% if scanner_cfg.bearer_token %}••••••••{% endif %}"></label>
+          <label><span>Basic user</span><input name="basic_user" value="{{ scanner_cfg.basic_user }}"></label>
+          <label><span>Basic password</span><input name="basic_password" type="password"></label>
+          <label class="full-width"><span>Field map (JSON)</span><textarea name="field_map" rows="6">{{ field_map_json }}</textarea></label>
+          <label class="full-width"><span>Severity map (JSON)</span><textarea name="severity_map" rows="3">{{ severity_map_json }}</textarea></label>
+        </div>
+        <div class="form-actions"><button class="btn primary" type="submit">Save module settings</button></div>
+      </form>
+      <div class="sec-admin-actions">
+        <form method="post" action="{{ url_for('vuln.test_scanner') }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn" type="submit">Test scanner connection</button>
+        </form>
+        <form method="post" action="{{ url_for('vuln.admin_sync') }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn" type="submit">Sync now</button>
+        </form>
+        <form method="post" action="{{ url_for('vuln.seed_demo') }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn" type="submit">Refresh demo finding</button>
+        </form>
+      </div>
+    </article>
+    {% endif %}
+  </div>
+{% endblock %}

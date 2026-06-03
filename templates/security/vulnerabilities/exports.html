@@ -1,0 +1,50 @@
+{% extends "security/vuln_base.html" %}
+{% block title %}Exports — {{ site_name }}{% endblock %}
+{% block sec_page_title %}<h1>Exports</h1>{% endblock %}
+{% block sec_page_subtitle %}
+  <p class="muted small">Auditor registers and audit packs for compliance workflows.</p>
+{% endblock %}
+{% block vuln_body %}
+  <div class="sec-export-grid">
+    <article class="sec-export-card">
+      <h3>Full register</h3>
+      <p>Complete CSV of all findings and workflow fields.</p>
+      <a class="btn primary" href="{{ url_for('vuln.export_download', kind='full') }}">Download CSV</a>
+    </article>
+    <article class="sec-export-card">
+      <h3>Resolved in period</h3>
+      <p>Findings closed within a date range.</p>
+      <form method="get" class="sec-form-stack">
+        <input type="hidden" name="kind" value="resolved">
+        <label><span>Since</span><input type="date" name="since" value="{{ request.args.get('since','') }}"></label>
+        <label><span>Until</span><input type="date" name="until" value="{{ request.args.get('until','') }}"></label>
+      </form>
+      <a class="btn" href="{{ url_for('vuln.export_download', kind='resolved', since=request.args.get('since',''), until=request.args.get('until','')) }}">Download CSV</a>
+    </article>
+    <article class="sec-export-card">
+      <h3>Open / overdue</h3>
+      <p>Active findings past SLA due date.</p>
+      <a class="btn" href="{{ url_for('vuln.export_download', kind='open') }}">Download CSV</a>
+    </article>
+    <article class="sec-export-card">
+      <h3>POA&amp;M-style</h3>
+      <p>Plan of action and milestones export.</p>
+      <a class="btn" href="{{ url_for('vuln.export_download', kind='poam') }}">Download CSV</a>
+    </article>
+    <article class="sec-export-card">
+      <h3>Risk acceptance</h3>
+      <p>Approved and pending risk acceptances.</p>
+      <a class="btn" href="{{ url_for('vuln.export_download', kind='risk_acceptance') }}">Download CSV</a>
+    </article>
+    <article class="sec-export-card">
+      <h3>JSON snapshot</h3>
+      <p>Machine-readable full dump.</p>
+      <a class="btn" href="{{ url_for('vuln.export_download', kind='json') }}">Download JSON</a>
+    </article>
+    <article class="sec-export-card">
+      <h3>Audit pack</h3>
+      <p>ZIP with registers and evidence index.</p>
+      <a class="btn" href="{{ url_for('vuln.export_download', kind='audit_pack') }}">Download ZIP</a>
+    </article>
+  </div>
+{% endblock %}

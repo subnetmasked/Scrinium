@@ -1,0 +1,427 @@
+"""HTTP routes for the Vulnerability Manager module."""
+from __future__ import annotations
+
+import json
+import mimetypes
+import os
+from datetime import date
+from pathlib import Path
+
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    current_app,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
+from werkzeug.utils import secure_filename
+
+import audit
+import auth
+from packages import authz
+from packages.security.modules.vulnerabilities import db, demo, export, import_data, remediation, scanner, sync, workflow
+
+PKG = "security"
+MOD = "vulnerabilities"
+bp = Blueprint("vuln", __name__)
+
+
+def _role():
+    return authz.current_role(PKG)
+
+
+def _config_dir() -> Path:
+    return Path(current_app.config.get("PACKAGES_CONFIG_DIR", ""))
+
+
+def _evidence_root() -> Path:
+    root = _config_dir() / "security" / "vulnerabilities" / "evidence"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _max_upload_bytes() -> int:
+    mb = int(os.environ.get("SCRINIUM_MAX_ATTACHMENT_MB", "50"))
+    return mb * 1024 * 1024
+
+
+@bp.route("/")
+@authz.package_login_required(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def dashboard():
+    stats = db.dashboard_stats()
+    by = stats.get("by_severity") or {}
+    stats["severity_max"] = max(1, max(by.values()) if by else 1)
+    last_sync = db.last_sync_run()
+    recent = db.list_vulnerabilities(limit=12, sort="severity")
+    role = _role()
+    return render_template(
+        "security/vulnerabilities/dashboard.html",
+        stats=stats,
+        last_sync=last_sync,
+        recent=recent,
+        role=role,
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/findings")
+@authz.package_login_required(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def findings_list():
+    role = _role()
+    rows = db.list_vulnerabilities(
+        status=request.args.get("status") or None,
+        severity=request.args.get("severity") or None,
+        assignee_id=int(request.args["assignee"]) if request.args.get("assignee") else None,
+        host_like=request.args.get("host") or None,
+        tag=request.args.get("tag") or None,
+        kev_only=bool(request.args.get("kev")),
+        overdue_only=bool(request.args.get("overdue")),
+        q=request.args.get("q") or None,
+        risk_pending=bool(request.args.get("pending_ra")),
+        sort=request.args.get("sort") or "severity",
+    )
+    users = auth.list_users()
+    user_map = {int(u["id"]): u["username"] for u in users}
+    return render_template(
+        "security/vulnerabilities/list.html",
+        rows=rows,
+        users=users,
+        user_map=user_map,
+        today=date.today().isoformat(),
+        role=role,
+        filters=request.args,
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/duplicates")
+@authz.require_auditor(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def duplicates_page():
+    role = _role()
+    groups_db = db.list_duplicate_groups(limit=100)
+    groups_legacy = db.scan_unkeyed_duplicates(limit=100)
+    return render_template(
+        "security/vulnerabilities/duplicates.html",
+        groups_db=groups_db,
+        groups_legacy=groups_legacy,
+        role=role,
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/<int:vuln_id>")
+@authz.package_login_required(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def detail(vuln_id: int):
+    v = db.get_vulnerability(vuln_id)
+    if not v:
+        abort(404)
+    role = _role()
+    tags = db.list_tags(vuln_id)
+    comments = db.list_comments(vuln_id)
+    events = db.list_events(vuln_id)
+    evidence = db.list_evidence(vuln_id)
+    users = auth.list_users()
+    assignee_name = None
+    if v.get("assignee_user_id"):
+        for u in users:
+            if int(u["id"]) == int(v["assignee_user_id"]):
+                assignee_name = u["username"]
+                break
+    refs_raw = v.get("refs_json") or "[]"
+    try:
+        refs = json.loads(refs_raw) if isinstance(refs_raw, str) else (refs_raw or [])
+    except json.JSONDecodeError:
+        refs = []
+    remediation_links = remediation.remediation_links_for_display(
+        solution=v.get("solution") or "",
+        cve=v.get("cve") or "",
+        refs=refs,
+    )
+    return render_template(
+        "security/vulnerabilities/detail.html",
+        v=v,
+        tags=tags,
+        comments=comments,
+        events=events,
+        evidence=evidence,
+        users=users,
+        assignee_name=assignee_name,
+        refs=refs,
+        remediation_links=remediation_links,
+        role=role,
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/<int:vuln_id>/action", methods=["POST"])
+@authz.require_technician(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def action(vuln_id: int):
+    auth.verify_csrf()
+    role = _role()
+    user = auth.current_user()
+    act = request.form.get("action") or ""
+    try:
+        if act == "status":
+            workflow.set_status(
+                vuln_id,
+                request.form.get("status") or "",
+                user=user,
+                role=role,
+                note=request.form.get("note") or "",
+                false_positive_reason=request.form.get("false_positive_reason") or "",
+                duplicate_of_id=int(request.form["duplicate_of"]) if request.form.get("duplicate_of") else None,
+                admin_override=role == "admin",
+            )
+        elif act == "assign":
+            aid = request.form.get("assignee_id")
+            workflow.assign(vuln_id, int(aid) if aid else None, user=user, role=role)
+        elif act == "severity":
+            workflow.override_severity(vuln_id, request.form.get("severity") or "info", role=role)
+        elif act == "request_risk_accept":
+            workflow.request_risk_acceptance(
+                vuln_id,
+                reason=request.form.get("reason") or "",
+                until=request.form.get("until") or "",
+                user=user,
+                role=role,
+            )
+        elif act == "comment":
+            body = request.form.get("body") or ""
+            if body.strip():
+                db.add_comment(vuln_id, body, int(user["id"]), str(user["username"]))
+                audit.record("vuln.comment", target=str(vuln_id))
+        elif act == "tags":
+            raw = request.form.get("tags") or ""
+            names = [t.strip() for t in raw.replace(",", "\n").splitlines() if t.strip()]
+            db.set_tags(vuln_id, names)
+            audit.record("vuln.tag", target=str(vuln_id), details={"tags": names})
+        elif act == "evidence":
+            f = request.files.get("file")
+            if not f or not f.filename:
+                raise workflow.WorkflowError("No file uploaded.")
+            fn = secure_filename(f.filename)
+            dest_dir = _evidence_root() / str(vuln_id)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / fn
+            data = f.read()
+            if len(data) > _max_upload_bytes():
+                raise workflow.WorkflowError("File too large.")
+            dest.write_bytes(data)
+            rel = str(dest.relative_to(_config_dir()))
+            mime = f.mimetype or mimetypes.guess_type(fn)[0] or "application/octet-stream"
+            db.add_evidence(
+                vuln_id, fn, rel, mime, len(data), int(user["id"]),
+                note=request.form.get("note") or "",
+            )
+            audit.record("vuln.evidence_upload", target=str(vuln_id), details={"file": fn})
+        else:
+            raise workflow.WorkflowError("Unknown action.")
+    except workflow.WorkflowError as e:
+        return redirect(url_for("vuln.detail", vuln_id=vuln_id, error=str(e)))
+    return redirect(url_for("vuln.detail", vuln_id=vuln_id))
+
+
+@bp.route("/<int:vuln_id>/approve-risk", methods=["POST"])
+@authz.require_auditor(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def approve_risk(vuln_id: int):
+    auth.verify_csrf()
+    workflow.decide_risk_acceptance(
+        vuln_id,
+        approve=bool(request.form.get("approve")),
+        note=request.form.get("note") or "",
+        user=auth.current_user(),
+        role=_role(),
+    )
+    return redirect(url_for("vuln.detail", vuln_id=vuln_id))
+
+
+@bp.route("/bulk", methods=["POST"])
+@authz.require_technician(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def bulk():
+    auth.verify_csrf()
+    ids = request.form.getlist("vuln_id")
+    act = request.form.get("bulk_action") or ""
+    role = _role()
+    user = auth.current_user()
+    for sid in ids:
+        try:
+            vid = int(sid)
+        except ValueError:
+            continue
+        if act == "assign":
+            aid = request.form.get("assignee_id")
+            workflow.assign(vid, int(aid) if aid else None, user=user, role=role)
+        elif act == "status" and request.form.get("status"):
+            workflow.set_status(vid, request.form["status"], user=user, role=role, note="bulk")
+    audit.record("vuln.bulk_action", details={"action": act, "count": len(ids)})
+    return redirect(url_for("vuln.findings_list"))
+
+
+@bp.route("/import", methods=["GET", "POST"])
+@authz.require_technician(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def import_page():
+    import_result = None
+    if request.method == "POST":
+        auth.verify_csrf()
+        f = request.files.get("file")
+        if not f or not f.filename:
+            return redirect(url_for("vuln.import_page", error="Choose a CSV or Excel file."))
+        import_result = import_data.import_file(f.filename, f.stream)
+        audit.record(
+            "vuln.import",
+            details={
+                "file": f.filename,
+                "added": import_result.added,
+                "updated": import_result.updated,
+                "merged": import_result.merged,
+            },
+        )
+        if import_result.ok:
+            return redirect(
+                url_for(
+                    "vuln.findings_list",
+                    notice=import_result.summary(),
+                )
+            )
+    return render_template(
+        "security/vulnerabilities/import.html",
+        role=_role(),
+        import_result=import_result,
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/exports")
+@authz.require_auditor(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def exports_page():
+    return render_template(
+        "security/vulnerabilities/exports.html",
+        role=_role(),
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/export/<kind>")
+@authz.require_auditor(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def export_download(kind: str):
+    since = request.args.get("since") or ""
+    until = request.args.get("until") or ""
+    if kind == "full":
+        body = export.full_register_csv()
+        export.log_export("full")
+        return Response(body, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=vuln-register.csv"})
+    if kind == "resolved":
+        body = export.resolved_in_period_csv(since, until)
+        export.log_export("resolved", {"since": since, "until": until})
+        return Response(body, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=vuln-resolved.csv"})
+    if kind == "open":
+        body = export.open_overdue_csv()
+        export.log_export("open_overdue")
+        return Response(body, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=vuln-open-overdue.csv"})
+    if kind == "poam":
+        body = export.poam_csv()
+        export.log_export("poam")
+        return Response(body, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=vuln-poam.csv"})
+    if kind == "risk_acceptance":
+        body = export.risk_acceptance_csv()
+        export.log_export("risk_acceptance")
+        return Response(body, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=vuln-risk-acceptance.csv"})
+    if kind == "json":
+        body = export.snapshot_json()
+        export.log_export("json")
+        return Response(body, mimetype="application/json", headers={"Content-Disposition": "attachment; filename=vuln-snapshot.json"})
+    if kind == "audit_pack":
+        data = export.audit_pack_zip(_config_dir())
+        export.log_export("audit_pack")
+        return Response(
+            data,
+            mimetype="application/zip",
+            headers={"Content-Disposition": "attachment; filename=vuln-audit-pack.zip"},
+        )
+    abort(404)
+
+
+@bp.route("/activity")
+@authz.require_auditor(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def activity():
+    import sqlite3
+    from packages.db import connect
+
+    rows: list[dict] = []
+    with connect(PKG) as c:
+        for r in c.execute(
+            "SELECT * FROM vuln_events ORDER BY ts DESC LIMIT 200"
+        ):
+            rows.append(dict(r))
+    return render_template(
+        "security/vulnerabilities/activity.html",
+        rows=rows,
+        role=_role(),
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/admin/seed-demo", methods=["POST"])
+@auth.admin_required
+def seed_demo():
+    auth.verify_csrf()
+    user = auth.current_user()
+    vid = demo.seed_demo_vulnerability(assignee_id=int(user["id"]))
+    audit.record("vuln.demo_seed", target=str(vid))
+    return redirect(url_for("vuln.detail", vuln_id=vid, notice="Demo finding refreshed."))
+
+
+@bp.route("/admin/sync", methods=["POST"])
+@auth.admin_required
+def admin_sync():
+    if not auth.current_user()["is_admin"] and _role() not in ("admin", "technician"):
+        abort(403)
+    auth.verify_csrf()
+    result = sync.run_sync(trigger="manual")
+    return redirect(url_for("vuln.dashboard", notice=result.get("message")))
+
+
+@bp.route("/admin/test-scanner", methods=["POST"])
+@auth.admin_required
+def test_scanner():
+    auth.verify_csrf()
+    result = scanner.test_connection()
+    return redirect(
+        url_for(
+            "packages_admin.package_admin",
+            package_id=PKG,
+            scanner_test=result.message,
+            scanner_ok=result.ok,
+        )
+    )
+
+
+@bp.route("/evidence/<int:evidence_id>")
+@authz.package_login_required(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def download_evidence(evidence_id: int):
+    with db.connect(db.PKG) as c:
+        row = c.execute(
+            "SELECT * FROM vuln_evidence WHERE id = ?", (evidence_id,)
+        ).fetchone()
+    if not row:
+        abort(404)
+    path = _config_dir() / row["stored_path"]
+    if not path.is_file():
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=row["filename"])

@@ -1,0 +1,121 @@
+{% extends "security/vuln_base.html" %}
+{% block title %}Findings — {{ site_name }}{% endblock %}
+{% block sec_page_title %}<h1>Findings</h1>{% endblock %}
+{% block sec_page_subtitle %}
+  <p class="muted small">{{ rows|length }} result{% if rows|length != 1 %}s{% endif %} — filter, triage, and bulk-update assignments.</p>
+{% endblock %}
+{% block vuln_body %}
+  <section class="sec-filters">
+    <form method="get" class="sec-filters-grid">
+      <label><span>Search</span><input name="q" value="{{ filters.get('q','') }}" placeholder="Title, host, CVE, ID…"></label>
+      <label><span>Status</span>
+        <select name="status">
+          <option value="">Any</option>
+          {% for s in ['open','triaged','in_progress','mitigated','closed','false_positive','risk_accepted','wont_fix','duplicate'] %}
+            <option value="{{ s }}" {% if filters.get('status')==s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label><span>Severity</span>
+        <select name="severity">
+          <option value="">Any</option>
+          {% for s in ['critical','high','medium','low','info'] %}
+            <option value="{{ s }}" {% if filters.get('severity')==s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label><span>Host contains</span><input name="host" value="{{ filters.get('host','') }}"></label>
+      <label><span>Sort</span>
+        <select name="sort">
+          <option value="severity" {% if filters.get('sort','severity')=='severity' %}selected{% endif %}>Severity</option>
+          <option value="updated" {% if filters.get('sort')=='updated' %}selected{% endif %}>Last updated</option>
+          <option value="due" {% if filters.get('sort')=='due' %}selected{% endif %}>Due date</option>
+          <option value="host" {% if filters.get('sort')=='host' %}selected{% endif %}>Host</option>
+        </select>
+      </label>
+      <div class="sec-filters-checks">
+        <label class="check-row"><input type="checkbox" name="kev" value="1" {% if filters.get('kev') %}checked{% endif %}> KEV only</label>
+        <label class="check-row"><input type="checkbox" name="overdue" value="1" {% if filters.get('overdue') %}checked{% endif %}> Overdue</label>
+        <label class="check-row"><input type="checkbox" name="pending_ra" value="1" {% if filters.get('pending_ra') %}checked{% endif %}> Pending risk acceptance</label>
+        <button class="btn primary" type="submit">Apply filters</button>
+        <a class="btn" href="{{ url_for('vuln.findings_list') }}">Reset</a>
+      </div>
+    </form>
+  </section>
+
+  {% if role in ('admin','technician') %}
+  <form id="bulk-form" method="post" action="{{ url_for('vuln.bulk') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="sec-bulk-bar">
+      <strong class="small">Bulk</strong>
+      <select name="bulk_action">
+        <option value="assign">Assign</option>
+        <option value="status">Set status</option>
+      </select>
+      <select name="assignee_id">
+        <option value="">Unassigned</option>
+        {% for u in users %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+      </select>
+      <select name="status">
+        <option value="triaged">triaged</option>
+        <option value="in_progress">in_progress</option>
+        <option value="mitigated">mitigated</option>
+      </select>
+      <button class="btn" type="submit">Apply to selected</button>
+    </div>
+  {% endif %}
+
+  <div class="sec-table-wrap">
+    <table class="sec-findings-table">
+      <thead>
+        <tr>
+          {% if role in ('admin','technician') %}<th style="width:2rem"><input type="checkbox" id="select-all" title="Select all"></th>{% endif %}
+          <th>Severity</th>
+          <th>Finding</th>
+          <th>Asset</th>
+          <th>CVE</th>
+          <th>Status</th>
+          <th>Assignee</th>
+          <th>Due</th>
+          <th>CVSS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            {% if role in ('admin','technician') %}
+              <td><input type="checkbox" name="vuln_id" value="{{ r.id }}" form="bulk-form"></td>
+            {% endif %}
+            <td>
+              <span class="sev-badge sev-{{ r.severity }}">{{ r.severity }}</span>
+              {% if r.kev %}<span class="kev-badge">KEV</span>{% endif %}
+            </td>
+            <td>
+              <a class="finding-title" href="{{ url_for('vuln.detail', vuln_id=r.id) }}">{{ r.title or r.external_id }}</a>
+              {% if r.risk_accept_state == 'requested' %}<span class="pending-badge">RA pending</span>{% endif %}
+            </td>
+            <td class="small">{{ r.host or '—' }}{% if r.ip %}<br><span class="muted">{{ r.ip }}{% if r.port %}:{{ r.port }}{% endif %}</span>{% endif %}</td>
+            <td class="small">{{ r.cve or '—' }}</td>
+            <td><span class="status-pill status-{{ r.wf_status }}">{{ r.wf_status }}</span></td>
+            <td class="small">{{ user_map.get(r.assignee_user_id, '—') }}</td>
+            <td class="small">{% if r.due_date %}<span{% if r.due_date < today %} style="color:var(--danger)"{% endif %}>{{ r.due_date }}</span>{% else %}—{% endif %}</td>
+            <td class="small">{% if r.cvss %}{{ '%.1f'|format(r.cvss) }}{% else %}—{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="9" class="muted" style="padding:2rem;text-align:center">No findings match your filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if role in ('admin','technician') %}</form>{% endif %}
+
+  <script>
+  (function () {
+    const all = document.getElementById('select-all');
+    if (!all) return;
+    all.addEventListener('change', () => {
+      document.querySelectorAll('[name=vuln_id]').forEach((cb) => { cb.checked = all.checked; });
+    });
+  })();
+  </script>
+{% endblock %}

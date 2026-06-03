@@ -1,0 +1,96 @@
+{% extends "security/vuln_base.html" %}
+{% block title %}Vulnerability Manager — {{ site_name }}{% endblock %}
+{% block sec_page_title %}<h1>Vulnerability Manager</h1>{% endblock %}
+{% block sec_page_subtitle %}
+  <p class="muted small">Operational overview of open exposure, SLA risk, and catalogued findings.</p>
+{% endblock %}
+{% block vuln_body %}
+  <div class="sec-header-actions" style="margin: -2.5rem 0 1rem auto">
+    <a class="btn primary" href="{{ url_for('vuln.findings_list') }}">View all findings</a>
+    {% if role in ('admin','technician') %}
+      <a class="btn" href="{{ url_for('vuln.import_page') }}">Import</a>
+    {% endif %}
+  </div>
+
+  <div class="sec-kpi-row">
+    <article class="sec-kpi">
+      <p class="sec-kpi-label">Open findings</p>
+      <p class="sec-kpi-value">{{ stats.total_open }}</p>
+    </article>
+    <article class="sec-kpi warn">
+      <p class="sec-kpi-label">Overdue</p>
+      <p class="sec-kpi-value">{{ stats.overdue }}</p>
+    </article>
+    <article class="sec-kpi">
+      <p class="sec-kpi-label">KEV exposure</p>
+      <p class="sec-kpi-value">{{ stats.kev_open }}</p>
+    </article>
+    {% if stats.pending_risk_acceptance %}
+    <article class="sec-kpi accent">
+      <p class="sec-kpi-label">Pending risk acceptance</p>
+      <p class="sec-kpi-value">{{ stats.pending_risk_acceptance }}</p>
+      <a class="btn small" href="{{ url_for('vuln.findings_list', pending_ra=1) }}">Review queue</a>
+    </article>
+    {% endif %}
+    {% if stats.duplicate_groups %}
+    <article class="sec-kpi warn">
+      <p class="sec-kpi-label">Possible duplicates</p>
+      <p class="sec-kpi-value">{{ stats.duplicate_groups }}</p>
+      <a class="btn small" href="{{ url_for('vuln.duplicates_page') }}">Review</a>
+    </article>
+    {% endif %}
+  </div>
+
+  <div class="sec-dash-main">
+    <section class="sec-panel">
+      <h2>Open by severity</h2>
+      <ul class="sec-sev-bars">
+        {% for sev in ['critical','high','medium','low','info'] %}
+          {% set n = stats.by_severity.get(sev, 0) %}
+          <li class="sev-{{ sev }}">
+            <span class="sev-badge sev-{{ sev }}">{{ sev }}</span>
+            <span class="sec-sev-bar-track"><span class="sec-sev-bar-fill" style="width: {{ (100 * n / stats.severity_max)|int }}%"></span></span>
+            <strong>{{ n }}</strong>
+          </li>
+        {% endfor %}
+      </ul>
+      {% if last_sync %}
+        <p class="muted small" style="margin-top:1rem">Last sync {{ (last_sync.finished_at or last_sync.started_at or '')[:19].replace('T',' ') }}
+          · {{ last_sync.trigger }} · +{{ last_sync.added }} new, {{ last_sync.updated }} updated</p>
+      {% else %}
+        <p class="muted small" style="margin-top:1rem">No API sync yet — import a spreadsheet or configure the scanner under <a href="{{ url_for('packages_admin.package_admin', package_id='security') }}">Admin → Security</a>.</p>
+      {% endif %}
+    </section>
+
+    <section class="sec-panel">
+      <h2>Priority queue</h2>
+      <div class="sec-table-wrap">
+        <table class="sec-recent-table">
+          <thead>
+            <tr><th>Severity</th><th>Finding</th><th>Host</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for r in recent %}
+              <tr>
+                <td><span class="sev-badge sev-{{ r.severity }}">{{ r.severity }}</span>{% if r.kev %} <span class="kev-badge">KEV</span>{% endif %}</td>
+                <td><a class="finding-title" href="{{ url_for('vuln.detail', vuln_id=r.id) }}">{{ r.title or r.external_id }}</a></td>
+                <td class="small">{{ r.host or r.ip or '—' }}</td>
+                <td><span class="status-pill status-{{ r.wf_status }}">{{ r.wf_status }}</span></td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="muted">No open findings. Import data or run a sync.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="sec-quick-pills">
+    <a href="{{ url_for('vuln.findings_list', overdue=1) }}">Overdue</a>
+    <a href="{{ url_for('vuln.findings_list', kev=1) }}">KEV catalog</a>
+    <a href="{{ url_for('vuln.findings_list', status='open') }}">Open only</a>
+    <a href="{{ url_for('vuln.findings_list', status='in_progress') }}">In progress</a>
+    {% if stats.pending_risk_acceptance %}<a href="{{ url_for('vuln.findings_list', pending_ra=1) }}">Risk acceptance queue</a>{% endif %}
+  </div>
+{% endblock %}

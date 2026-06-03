@@ -1,0 +1,37 @@
+{% extends "security/vuln_base.html" %}
+{% block title %}Import — {{ site_name }}{% endblock %}
+{% block sec_page_title %}<h1>Import findings</h1>{% endblock %}
+{% block sec_page_subtitle %}
+  <p class="muted small">Upload CSV or Excel exports from your vulnerability scanner. Existing rows are matched by CVE + target or title + host.</p>
+{% endblock %}
+{% block vuln_body %}
+  {% if import_result %}
+    <p class="flash {% if import_result.ok %}ok{% else %}error{% endif %}">{{ import_result.summary() }}</p>
+    {% if import_result.errors %}
+      <ul class="muted small">
+        {% for err in import_result.errors[:12] %}<li>{{ err }}</li>{% endfor %}
+        {% if import_result.errors|length > 12 %}<li>…and {{ import_result.errors|length - 12 }} more</li>{% endif %}
+      </ul>
+    {% endif %}
+  {% endif %}
+
+  <form method="post" enctype="multipart/form-data" class="sec-panel">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="sec-import-zone">
+      <p class="sec-import-help">
+        Supported formats: <strong>.csv</strong>, <strong>.xlsx</strong> (OpenVAS / Greenbone style).
+        Expected columns include
+        <code>vulnerability name</code>, <code>target</code>, <code>target name</code>,
+        <code>severity</code>, <code>cvss</code>, <code>cve</code>, <code>solution</code>,
+        <code>solution external references</code>, <code>proof</code>, <code>tags</code>.
+        Rows are matched by CVE (or title) + host + port so a later API sync updates the same record instead of duplicating it.
+        Empty solution cells are not filled with placeholder text — NVD/CVE.org links are stored when a CVE is present.
+      </p>
+      <input type="file" name="file" accept=".csv,.xlsx,.xlsm,text/csv" required>
+    </div>
+    <div class="form-actions" style="margin-top:1rem">
+      <button class="btn primary" type="submit">Import file</button>
+      <a class="btn" href="{{ url_for('vuln.findings_list') }}">Back to findings</a>
+    </div>
+  </form>
+{% endblock %}

@@ -31,6 +31,7 @@ RESERVED_SLUGS = {
     "new", "edit", "delete", "admin", "static", "api", "loose", "other",
     "login", "logout", "setup", "search", "health", "dash",
     "c", "d", "e", "f", "n", "s", "a",
+    "security", "itsm",
 }
 
 DEFAULT_CATEGORIES: list[dict] = [

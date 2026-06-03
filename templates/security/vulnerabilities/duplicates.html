@@ -1,0 +1,68 @@
+{% extends "security/vuln_base.html" %}
+{% block title %}Duplicates — {{ site_name }}{% endblock %}
+{% block sec_page_title %}<h1>Possible duplicates</h1>{% endblock %}
+{% block sec_page_subtitle %}
+  <p class="muted small">Findings that represent the same issue on the same asset. New imports and API sync are merged automatically by identity fingerprint (CVE or title + host + port).</p>
+{% endblock %}
+{% block vuln_body %}
+  {% if not groups_db and not groups_legacy %}
+    <article class="sec-panel">
+      <p class="muted">No duplicate groups detected. Imports and scanner sync will update existing rows instead of creating copies.</p>
+    </article>
+  {% endif %}
+
+  {% if groups_db %}
+    <article class="sec-panel" style="margin-bottom:1rem">
+      <h2>Database duplicate keys</h2>
+      <p class="muted small">Multiple rows share the same <code>identity_key</code> — resolve by marking one as duplicate of the other.</p>
+      <div class="sec-table-wrap">
+        <table class="sec-findings-table">
+          <thead>
+            <tr><th>Count</th><th>Record IDs</th><th>External IDs</th></tr>
+          </thead>
+          <tbody>
+            {% for g in groups_db %}
+              <tr>
+                <td>{{ g.n }}</td>
+                <td>
+                  {% for id in g.ids %}
+                    <a href="{{ url_for('vuln.detail', vuln_id=id) }}">#{{ id }}</a>{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                </td>
+                <td class="small">{{ g.external_ids|join(', ') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  {% endif %}
+
+  {% if groups_legacy %}
+    <article class="sec-panel">
+      <h2>Legacy / unlinked pairs</h2>
+      <p class="muted small">Same fingerprint but different external IDs (e.g. CSV import + API). Re-import or sync to auto-merge; or close extras as <em>duplicate</em> in workflow.</p>
+      <div class="sec-table-wrap">
+        <table class="sec-findings-table">
+          <thead>
+            <tr><th>Count</th><th>Records</th><th>External IDs</th><th>Sample title</th></tr>
+          </thead>
+          <tbody>
+            {% for g in groups_legacy %}
+              <tr>
+                <td>{{ g.n }}</td>
+                <td>
+                  {% for id in g.ids %}
+                    <a href="{{ url_for('vuln.detail', vuln_id=id) }}">#{{ id }}</a>{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                </td>
+                <td class="small">{{ g.external_ids|join(' · ') }}</td>
+                <td class="small">{{ g.titles[0] if g.titles else '—' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  {% endif %}
+{% endblock %}

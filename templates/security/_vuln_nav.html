@@ -1,0 +1,28 @@
+{% set ep = request.endpoint or '' %}
+<header class="sec-page-header">
+  <div class="sec-page-header-main">
+    <p class="sec-breadcrumb"><a href="{{ url_for('pkg_security.landing') }}">Security</a> / Vulnerability Manager</p>
+    {% block sec_page_title %}<h1>Vulnerability Manager</h1>{% endblock %}
+    {% block sec_page_subtitle %}{% endblock %}
+  </div>
+  <nav class="sec-subnav" aria-label="Vulnerability manager">
+    <a class="sec-subnav-link{% if ep == 'vuln.dashboard' %} active{% endif %}" href="{{ url_for('vuln.dashboard') }}">Dashboard</a>
+    <a class="sec-subnav-link{% if ep in ('vuln.findings_list', 'vuln.detail') %} active{% endif %}" href="{{ url_for('vuln.findings_list') }}">Findings</a>
+    {% if role in ('admin','technician') %}
+      <a class="sec-subnav-link{% if ep == 'vuln.import_page' %} active{% endif %}" href="{{ url_for('vuln.import_page') }}">Import</a>
+    {% endif %}
+    {% if role in ('admin','auditor') %}
+      <a class="sec-subnav-link{% if ep == 'vuln.duplicates_page' %} active{% endif %}" href="{{ url_for('vuln.duplicates_page') }}">Duplicates</a>
+    {% endif %}
+    {% if role in ('admin','auditor','technician') %}
+      <a class="sec-subnav-link{% if ep == 'vuln.exports_page' %} active{% endif %}" href="{{ url_for('vuln.exports_page') }}">Exports</a>
+      <a class="sec-subnav-link{% if ep == 'vuln.activity' %} active{% endif %}" href="{{ url_for('vuln.activity') }}">Activity</a>
+    {% endif %}
+  </nav>
+</header>
+{% if request.args.get('notice') %}
+  <p class="flash ok sec-flash">{{ request.args.notice }}</p>
+{% endif %}
+{% if request.args.get('error') %}
+  <p class="flash error sec-flash">{{ request.args.error }}</p>
+{% endif %}

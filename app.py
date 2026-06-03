@@ -36,6 +36,7 @@ from werkzeug.utils import secure_filename
 
 import auth
 import audit
+import packages
 import backlinks
 import frontmatter
 import links
@@ -60,7 +61,7 @@ HTTPS_ONLY = os.environ.get("SCRINIUM_HTTPS_ONLY", "0") == "1"
 TRUST_PROXY = os.environ.get("SCRINIUM_TRUST_PROXY", "0") == "1"
 MAX_UPLOAD_MB = int(os.environ.get("SCRINIUM_MAX_UPLOAD_MB", "8"))
 MAX_ATTACHMENT_MB = int(os.environ.get("SCRINIUM_MAX_ATTACHMENT_MB", "50"))
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 PROJECT_URL = "https://github.com/subnetmasked/Scrinium"
 AUTHOR_NAME = "subnetmasked"
 AUTHOR_URL = "https://github.com/subnetmasked"
@@ -117,6 +118,7 @@ with app.app_context():
     auth.init_db(Path(app.config["AUTH_DB"]))
     links.init_db(Path(app.config["AUTH_DB"]))
     nav.load_categories(CONFIG_DIR)
+    packages.init_app(app, config_dir=CONFIG_DIR, data_dir=DATA_DIR)
 
 
 def _build_md_renderer() -> markdown.Markdown:

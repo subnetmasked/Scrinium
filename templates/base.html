@@ -19,8 +19,9 @@
         href="{{ url_for('static', filename='favicon.ico') }}?v={{ app_version }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}">
   <style>{{ font_css | safe }}</style>
+  {% block head_extra %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <header class="topbar">
     <div class="topbar-left">
       <a class="brand" href="{{ url_for('index') }}" aria-label="{{ site_name }} home">
@@ -32,14 +33,11 @@
       <a class="btn topbar-search-btn"
          href="{{ url_for('search') }}"
          title="Advanced search">Search...</a>
+      {% if current_user %}{% include "_app_switcher.html" %}{% endif %}
     </div>
     <nav class="actions">
       <a class="btn" href="{{ url_for('new') }}">+ New doc</a>
       {% if current_user %}
-        <a class="btn{% if request.endpoint == 'index' %} active{% endif %}"
-           href="{{ url_for('index') }}">Docs</a>
-        <a class="btn{% if request.endpoint and request.endpoint.startswith('dash') %} active{% endif %}"
-           href="{{ url_for('dash') }}">Dashboard</a>
         {% if current_user.is_admin %}
           <a class="btn{% if request.endpoint and request.endpoint.startswith('admin') %} active{% endif %}"
              href="{{ url_for('admin_users') }}">Admin</a>

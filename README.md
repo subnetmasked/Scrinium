@@ -19,8 +19,9 @@ with optional **LDAP / Active Directory** auth. Plain `.md` files on disk
 [Quick start](#first-run) ·
 [Tour](#tour) ·
 [Admin panel](#admin-panel) ·
-[Authentication](#authentication) ·
+[Platform packages](#platform-packages-security) ·
 [Operations](#operations) ·
+[CODEMAP](CODEMAP.md) ·
 [Deploy](#production-deploy-fedora-vm)
 
 </div>
@@ -44,6 +45,7 @@ with optional **LDAP / Active Directory** auth. Plain `.md` files on disk
 | **Tags & search**       | Per-entry tag chips → `/t/<tag>`, full-text search with optional per-category scope.     |
 | **One-click backup**    | Admin → Backup: download every markdown file and attachment as a single zip.             |
 | **Hardened forms**      | CSRF-protected forms; login lockout; HttpOnly + SameSite cookies.                        |
+| **Platform packages**   | Optional **Security** package (vulnerability manager) and future modules; off by default. |
 
 ---
 
@@ -68,6 +70,8 @@ with optional **LDAP / Active Directory** auth. Plain `.md` files on disk
   - [Backups](#backups)
   - [Reset a forgotten password](#reset-a-forgotten-password)
   - [Updating](#updating)
+- [Platform packages (Security)](#platform-packages-security)
+- [CODEMAP](CODEMAP.md)
 - [Security notes](#security-notes)
 - [Run without a container](#run-without-a-container)
 - [Production deploy (Fedora VM)](#production-deploy-fedora-vm)
@@ -80,6 +84,12 @@ with optional **LDAP / Active Directory** auth. Plain `.md` files on disk
 
 ```bash
 cd Scrinium
+./scripts/install.sh
+```
+
+Or manually:
+
+```bash
 mkdir -p data
 podman-compose up -d --build
 ```
@@ -117,10 +127,12 @@ internal deployment.
 
 | File / dir              | Holds                                                  |
 | ----------------------- | ------------------------------------------------------ |
-| `auth.db`               | Users, LDAP config, appearance, features, link cards   |
+| `auth.db`               | Users, LDAP config, appearance, features, link cards, package config |
 | `secret.key`            | Flask session-signing key                              |
 | `categories.json`       | Category definitions (order, icon, access)             |
+| `security.db`           | Vulnerability Manager findings, workflow, events (when enabled) |
 | `favicons/`             | Cached favicons for the links dashboard                |
+| `security/vulnerabilities/evidence/` | Uploaded remediation evidence files |
 
 ---
 
@@ -130,9 +142,10 @@ internal deployment.
 
 The topbar is consistent on every page:
 
-- **Left** — clickable logo, site name, global search field.
-- **Right** — `+ New doc`, **Docs**, **Dashboard**, **Admin** (admins
-  only), the signed-in username, **Settings**, **Sign out**.
+- **Left** — clickable logo, site name, global search field, **Apps** switcher
+  (Documentation, Dashboard, and any enabled platform packages such as Security).
+- **Right** — `+ New doc`, **Admin** (admins only), the signed-in username,
+  **Settings**, **Sign out**.
 
 The active route is highlighted; on narrow viewports the brand collapses
 to just the icon and buttons wrap.
@@ -303,6 +316,7 @@ panel is a sidebar of sections:
 | **Audit**       | Searchable admin log of authentication, document edits/moves/deletes/restores, and attachment operations. |
 | **Trash**       | Soft-deleted docs/folders waiting for restore or permanent purge. |
 | **Backup**      | Stream a single zip of every markdown file and attachment.                                                                                             |
+| **Security**    | Enable the Security package, map groups to Auditor/Technician roles, configure a generic scanner API, and run the Vulnerability Manager module.   |
 
 Fonts are bundled in `static/fonts/` — no outbound network from the
 browser. Nerd Font choices include the standard icon glyph ranges, so
@@ -487,9 +501,10 @@ password lives in your directory.
 
 ```bash
 cd ~/scrinium
-git pull
-podman-compose up -d --build
+./scripts/update.sh
 ```
+
+Use `./scripts/update.sh --no-cache` if a rebuild picks up stale layers.
 
 If a build picks up stale layers (rare, but possible):
 
@@ -534,7 +549,7 @@ SCRINIUM_DATA=./data python app.py
 ```
 
 Health check at <http://localhost:8080/health> returns
-`{"data":"./data","ok":true,"version":"1.0.0"}`.
+`{"data":"./data","ok":true,"version":"1.1.0"}`.
 
 ---
 
@@ -612,7 +627,7 @@ For a strictly internal VM accessed by IP, leave the defaults alone.
 ```bash
 podman-compose up -d --build
 curl -s http://127.0.0.1:8080/health
-# expect: {"data":"/data","ok":true,"version":"1.0.0"}
+# expect: {"data":"/data","ok":true,"version":"1.1.0"}
 ```
 
 ### 7. Open the firewall
@@ -733,39 +748,145 @@ re-roll the TLS config — no editing of committed files.
 
 ---
 
+## Platform packages (Security)
+
+Optional packages extend Scrinium without touching your markdown tree. They are
+**disabled by default** — existing installs behave the same until an admin
+enables a package under **Admin → Security**.
+
+The topbar **Apps** switcher lists Documentation, Dashboard, and any enabled
+packages. Package routes live under `/<package_id>/` (e.g. `/security/`).
+
+### Enabling Security
+
+1. **Admin → Groups** — create groups such as `security-auditors` and `security-technicians`.
+2. **Admin → Security** — enable the package, map groups to **Auditor** and **Technician** roles, enable the **Vulnerability Manager** module.
+3. Users in mapped groups (or admins) see **Security** in the Apps switcher.
+
+### Roles
+
+| Role | Capabilities |
+| ---- | ------------ |
+| **Auditor** | View findings, exports, activity log, approve/reject risk acceptance |
+| **Technician** | Everything auditors can do, plus assign, change status, upload evidence, request risk acceptance, bulk actions, import |
+| **Admin** | Full access including package settings and scanner configuration |
+
+Technician supersedes auditor when a user is in both mapped groups.
+
+### Vulnerability Manager
+
+Routes under `/security/vulnerabilities/`:
+
+| Page | Path | Purpose |
+| ---- | ---- | ------- |
+| Dashboard | `/` | KPIs, severity breakdown, priority queue |
+| Findings | `/findings` | Filterable table, bulk assign/status |
+| Finding detail | `/<id>` | Overview, remediation links, workflow sidebar, evidence, comments, timeline |
+| Import | `/import` | Upload CSV or Excel (Greenbone/OpenVAS-style exports) |
+| Duplicates | `/duplicates` | Review possible duplicate groups (auditors) |
+| Exports | `/exports` | CSV registers, JSON snapshot, audit-pack ZIP |
+| Activity | `/activity` | Cross-finding event log |
+
+#### Data sources
+
+- **CSV / Excel import** — columns such as `vulnerability name`, `target`, `target name`, `severity`, `cve`, `solution`, `solution external references`, `proof`. Requires `openpyxl` for `.xlsx`.
+- **Scanner API sync** — generic JSON REST client; field map and severity map are JSON in Admin → Security. No vendor names in the UI.
+- **Manual** — create or edit findings through the workflow UI.
+
+#### Deduplication
+
+Each finding has a canonical **identity key** (CVE or title + host/IP + port). Import
+and API sync both upsert on this fingerprint, so the same vulnerability from a
+spreadsheet and later from a scanner **updates one row** instead of creating a copy.
+The scanner’s `external_id` is preferred over import-derived IDs when merging.
+
+Use **Duplicates** (or the dashboard KPI) to find legacy pairs that pre-date this
+logic; mark extras as `duplicate` in workflow.
+
+#### Remediation text
+
+If the import or scanner provides no solution text, Scrinium does **not** invent
+placeholder remediation. Instead it stores authoritative links (NVD, CVE.org, and
+any URLs from `solution external references`) and shows them on the finding’s
+Remediation tab.
+
+#### Workflow rules
+
+- **Close** requires `mitigated` status first, at least one evidence file, and a closure note.
+- **Risk acceptance** is two-step: technician requests → auditor (or admin) approves/rejects. Self-approval is blocked.
+- **False positive** and **won’t fix** require a reason.
+- SLA due dates are applied when status moves to `triaged` (configurable per severity in Admin → Security).
+
+#### Scanner sync
+
+Set sync interval (minutes) in Admin → Security (`0` = manual only). **Sync now**
+and **Test scanner connection** are on the same page. Scheduled sync runs in a
+background thread and logs results in `sync_runs`.
+
+#### State on disk
+
+| Path | Holds |
+| ---- | ----- |
+| `data/.scrinium/security.db` | Findings, workflow, comments, tags, events, sync runs |
+| `data/.scrinium/security/vulnerabilities/evidence/` | Evidence uploads per finding |
+| `data/.scrinium/security/vulnerabilities/audit.jsonl` | Optional JSONL audit trail |
+
+Package configuration (enabled flag, roles, scanner settings, SLA) is stored in
+`auth.db` under the `packages` config key — not in `security.db`.
+
+### Adding future packages
+
+See [CODEMAP.md](CODEMAP.md) for the platform framework (`packages/registry.py`,
+`authz.py`, `hub.py`) and how to register a new package without editing `app.py`
+beyond the existing `packages.init_app()` call.
+
+---
+
 ## Layout
 
 ```
 .
-├── app.py               # Flask routes, markdown rendering, /admin/backup
-├── auth.py              # users, sessions, LDAP, CSRF, rate limit, prefs
-├── nav.py               # categories, sidebar tree, breadcrumbs, ACL
-├── frontmatter.py       # YAML frontmatter parse/serialize + templates
-├── markdown_ext.py      # wikilinks + attachment image rewriting
-├── backlinks.py         # backlinks index
-├── links.py             # /dash links + favicon fetcher
+├── app.py                  # Flask app, markdown routes, admin, health
+├── CODEMAP.md              # architecture map (read this when hacking the code)
+├── packages/               # platform framework + optional packages
+│   ├── registry.py         # Package / Module / NavApp registration
+│   ├── authz.py            # per-package roles, enable gates, decorators
+│   ├── db.py               # per-package SQLite helpers
+│   ├── admin.py            # /admin/<package_id> settings routes
+│   ├── hub.py              # package landing pages at /<package_id>/
+│   ├── builtins.py         # Documentation + Dashboard nav apps
+│   └── security/           # Security package (Vulnerability Manager)
+├── auth.py                 # users, sessions, LDAP, CSRF, rate limit
+├── nav.py                  # categories, sidebar tree, breadcrumbs, ACL
+├── audit.py                # admin audit log
+├── frontmatter.py          # YAML frontmatter parse/serialize
+├── markdown_ext.py         # wikilinks + attachment image rewriting
+├── backlinks.py            # backlinks index
+├── links.py                # /dash links + favicon fetcher
+├── trash.py                # soft-delete / restore
 ├── scripts/
+│   ├── install.sh          # first-time setup
+│   ├── update.sh           # git pull + rebuild
+│   ├── repair.sh           # diagnostics (+ optional --rebuild)
 │   └── reset_password.py   # offline password reset
-├── templates/           # Jinja templates (login, setup, view, edit,
-│                        #   admin_*, settings, …)
+├── templates/
+│   ├── base.html           # layout, topbar, app switcher
+│   ├── _app_switcher.html  # Apps dropdown partial
+│   ├── security/           # Security package + vuln manager templates
+│   └── …                   # login, setup, view, edit, admin_*, …
 ├── static/
-│   ├── style.css
+│   ├── style.css           # global styles + app switcher
+│   ├── security.css        # Security / vuln manager UI
 │   ├── editor.js
-│   ├── code-copy.js     # one-click copy on code blocks
-│   ├── fonts/           # bundled Inter, IBM Plex, JetBrains/FiraCode Nerd Fonts
-│   ├── scrinium-icon.svg
-│   ├── favicon.ico
-│   ├── apple-touch-icon.png
-│   └── icon-{16,32,192,512}.png
+│   ├── code-copy.js
+│   └── fonts/              # bundled Inter, IBM Plex, Nerd Fonts
 ├── nginx/
-│   └── scrinium.conf.template   # bundled TLS terminator (optional)
-├── data/                # YOUR markdown files (volume-mounted)
-│   ├── welcome.md
-│   ├── _attachments/
-│   ├── servers/web-01/
-│   │   ├── overview.md
-│   │   └── _attachments/overview/
-│   └── .scrinium/       # auth.db + secret.key + categories.json + favicons/
+│   └── scrinium.conf.template
+├── data/                   # YOUR markdown (volume-mounted)
+│   └── .scrinium/
+│       ├── auth.db
+│       ├── security.db     # when Security package is used
+│       └── …
 ├── Containerfile
 ├── compose.yaml
 ├── .env.example
@@ -775,6 +896,9 @@ re-roll the TLS config — no editing of committed files.
 `_attachments/` folders hold images uploaded through the editor and are
 intentionally hidden from every UI listing — they only appear as the
 storage backing for `/a/...` image URLs in rendered markdown.
+
+For a full file-by-file map of routes, modules, database schema, and extension
+points, see **[CODEMAP.md](CODEMAP.md)**.
 
 ---
 

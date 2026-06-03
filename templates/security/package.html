@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block body_class %}area-security{% endblock %}
+{% block title %}Security — {{ site_name }}{% endblock %}
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='security.css') }}?v={{ app_version }}">
+{% endblock %}
+{% block content %}
+<div class="sec-shell">
+  <header class="sec-page-header">
+    <div class="sec-page-header-main">
+      <h1>Security</h1>
+      <p class="muted small">Security operations and compliance tooling.</p>
+    </div>
+  </header>
+  <div class="sec-module-grid">
+    {% for card in module_cards %}
+      {% if card.disabled %}
+        <article class="sec-module-card disabled">
+          <span class="sec-module-icon">{{ category_icon(card.icon) | safe }}</span>
+          <h2>{{ card.name }}</h2>
+          <p class="muted">{{ card.message }}</p>
+        </article>
+      {% else %}
+        <a class="sec-module-card" href="{{ card.url }}">
+          <span class="sec-module-icon">{{ category_icon(card.icon) | safe }}</span>
+          <h2>{{ card.name }}</h2>
+          <ul class="sec-stats">
+            <li><strong>{{ card.open }}</strong> open findings</li>
+            {% if card.overdue %}<li><strong>{{ card.overdue }}</strong> overdue</li>{% endif %}
+            {% if card.pending_ra %}<li><strong>{{ card.pending_ra }}</strong> pending approvals</li>{% endif %}
+            {% if card.kev %}<li><strong>{{ card.kev }}</strong> KEV exposure</li>{% endif %}
+          </ul>
+          <span class="btn primary">Open module →</span>
+        </a>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

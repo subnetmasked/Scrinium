@@ -19,6 +19,10 @@
           <a class="adm-link{% if request.endpoint == ep %} active{% endif %}"
              href="{{ url_for(ep) }}">{{ label }}</a>
         {% endfor %}
+        {% for pkg in registered_packages %}
+          <a class="adm-link{% if request.endpoint == 'packages_admin.package_admin' and request.view_args.get('package_id') == pkg.id %} active{% endif %}"
+             href="{{ url_for('packages_admin.package_admin', package_id=pkg.id) }}">{{ pkg.name }}</a>
+        {% endfor %}
       </nav>
     </aside>
     <section class="admin-main">

@@ -1,0 +1,66 @@
+{% if current_user and app_switcher_entries %}
+<div class="app-switcher" data-app-switcher>
+  <button type="button" class="btn app-switcher-btn" aria-expanded="false" aria-haspopup="true" data-app-switcher-toggle>
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="7" height="7" rx="1"/>
+    </svg>
+    <span>Apps</span>
+    <svg class="app-switcher-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+  </button>
+  <div class="app-switcher-panel" role="menu" hidden data-app-switcher-panel>
+    <p class="app-switcher-heading">Switch app</p>
+    <div class="app-switcher-grid">
+      {% for entry in app_switcher_entries %}
+        <a class="app-switcher-card{% if entry.active %} active{% endif %}"
+           href="{{ entry.url }}" role="menuitem">
+          <span class="app-switcher-card-icon">{{ category_icon(entry.icon) | safe }}</span>
+          <span class="app-switcher-card-name">{{ entry.name }}</span>
+          {% if entry.kind == 'package' %}<span class="app-switcher-card-meta">Package</span>{% endif %}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  const root = document.querySelector('[data-app-switcher]');
+  if (!root || root.dataset.bound) return;
+  root.dataset.bound = '1';
+  const btn = root.querySelector('[data-app-switcher-toggle]');
+  const panel = root.querySelector('[data-app-switcher-panel]');
+  const close = () => {
+    panel.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    root.classList.remove('open');
+  };
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = panel.hidden;
+    document.querySelectorAll('[data-app-switcher].open').forEach((el) => {
+      if (el !== root) {
+        el.classList.remove('open');
+        el.querySelector('[data-app-switcher-panel]').hidden = true;
+        el.querySelector('[data-app-switcher-toggle]').setAttribute('aria-expanded', 'false');
+      }
+    });
+    if (open) {
+      const r = btn.getBoundingClientRect();
+      panel.style.top = (r.bottom + 6) + 'px';
+      panel.style.left = Math.max(8, r.left) + 'px';
+    }
+    panel.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    root.classList.toggle('open', open);
+  });
+  document.addEventListener('click', (e) => {
+    if (!root.contains(e.target)) close();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+})();
+</script>
+{% endif %}
