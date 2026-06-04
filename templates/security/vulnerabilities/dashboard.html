@@ -5,11 +5,24 @@
   <p class="muted small">Operational overview of open exposure, SLA risk, and catalogued findings.</p>
 {% endblock %}
 {% block vuln_body %}
-  <div class="sec-header-actions" style="margin: -2.5rem 0 1rem auto">
-    <a class="btn primary" href="{{ url_for('vuln.findings_list') }}">View all findings</a>
-    {% if role in ('admin','technician') %}
-      <a class="btn" href="{{ url_for('vuln.import_page') }}">Import</a>
-    {% endif %}
+  <div class="sec-dash-toolbar">
+    <form class="sec-search" role="search" method="get" action="{{ url_for('vuln.findings_list') }}"
+          data-search data-endpoint="{{ url_for('vuln.api_search') }}">
+      <svg class="sec-search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+      </svg>
+      <input type="search" name="q" autocomplete="off" spellcheck="false"
+             placeholder="Search findings by title, host, IP, CVE, or ID…"
+             aria-label="Search findings" data-search-input>
+      <kbd class="sec-search-hint">Enter ↵</kbd>
+      <div class="sec-search-results" role="listbox" hidden data-search-results></div>
+    </form>
+    <div class="sec-header-actions">
+      <a class="btn primary" href="{{ url_for('vuln.findings_list') }}">View all findings</a>
+      {% if role in ('admin','technician') %}
+        <a class="btn" href="{{ url_for('vuln.import_page') }}">Import</a>
+      {% endif %}
+    </div>
   </div>
 
   <div class="sec-kpi-row">
@@ -63,11 +76,21 @@
     </section>
 
     <section class="sec-panel">
-      <h2>Priority queue</h2>
+      <div class="sec-panel-head">
+        <h2>Priority queue</h2>
+        {% if role in ('admin','technician') %}
+        <div class="sec-owner-filters">
+          <span class="muted small">Show:</span>
+          <a href="{{ url_for('vuln.findings_list', owner='mine') }}">My findings</a>
+          <a href="{{ url_for('vuln.findings_list', owner='unassigned') }}">Unassigned</a>
+          <a href="{{ url_for('vuln.findings_list', owner='mine_unassigned') }}">Mine + unassigned</a>
+        </div>
+        {% endif %}
+      </div>
       <div class="sec-table-wrap">
         <table class="sec-recent-table">
           <thead>
-            <tr><th>Severity</th><th>Finding</th><th>Host</th><th>Status</th></tr>
+            <tr><th>Severity</th><th>Finding</th><th>Host</th><th>Status</th><th>Owner</th></tr>
           </thead>
           <tbody>
             {% for r in recent %}
@@ -76,9 +99,16 @@
                 <td><a class="finding-title" href="{{ url_for('vuln.detail', vuln_id=r.id) }}">{{ r.title or r.external_id }}</a></td>
                 <td class="small">{{ r.host or r.ip or '—' }}</td>
                 <td><span class="status-pill status-{{ r.wf_status }}">{{ r.wf_status }}</span></td>
+                <td class="small">
+                  {% if r.assignee_user_id %}
+                    <span class="owner-chip{% if r.assignee_user_id == current_user_id %} owner-mine{% endif %}">{{ user_map.get(r.assignee_user_id, 'user #' ~ r.assignee_user_id) }}{% if r.assignee_user_id == current_user_id %} (you){% endif %}</span>
+                  {% else %}
+                    <span class="owner-none">Unassigned</span>
+                  {% endif %}
+                </td>
               </tr>
             {% else %}
-              <tr><td colspan="4" class="muted">No open findings. Import data or run a sync.</td></tr>
+              <tr><td colspan="5" class="muted">No open findings. Import data or run a sync.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -87,10 +117,91 @@
   </div>
 
   <div class="sec-quick-pills">
+    {% if role in ('admin','technician') %}
+      <a href="{{ url_for('vuln.findings_list', owner='mine') }}">Assigned to me</a>
+      <a href="{{ url_for('vuln.findings_list', owner='unassigned') }}">Unassigned</a>
+    {% endif %}
     <a href="{{ url_for('vuln.findings_list', overdue=1) }}">Overdue</a>
     <a href="{{ url_for('vuln.findings_list', kev=1) }}">KEV catalog</a>
     <a href="{{ url_for('vuln.findings_list', status='open') }}">Open only</a>
     <a href="{{ url_for('vuln.findings_list', status='in_progress') }}">In progress</a>
     {% if stats.pending_risk_acceptance %}<a href="{{ url_for('vuln.findings_list', pending_ra=1) }}">Risk acceptance queue</a>{% endif %}
   </div>
+
+  <script>
+  (function () {
+    const form = document.querySelector('[data-search]');
+    if (!form) return;
+    const input = form.querySelector('[data-search-input]');
+    const box = form.querySelector('[data-search-results]');
+    const endpoint = form.dataset.endpoint;
+    let timer = null;
+    let items = [];
+    let active = -1;
+    let token = 0;
+
+    const esc = (s) => (s || '').replace(/[&<>"]/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+    ));
+    const hide = () => { box.hidden = true; active = -1; };
+
+    const render = (data) => {
+      items = data.results || [];
+      active = -1;
+      if (!items.length) {
+        box.innerHTML = '<div class="sec-search-empty">No matches for “' + esc(data.query) + '”.</div>';
+        box.hidden = false;
+        return;
+      }
+      box.innerHTML = items.map((r, i) => (
+        '<a class="sec-search-item" role="option" href="' + r.url + '" data-i="' + i + '">' +
+          '<span class="sev-badge sev-' + r.severity + '">' + r.severity + '</span>' +
+          '<span class="sec-search-item-main">' +
+            '<span class="sec-search-item-title">' + esc(r.title) + (r.kev ? ' <span class="kev-badge">KEV</span>' : '') + '</span>' +
+            '<span class="sec-search-item-sub">' + esc(r.host) + (r.cve ? ' · ' + esc(r.cve) : '') + '</span>' +
+          '</span>' +
+          '<span class="status-pill status-' + r.status + '">' + r.status + '</span>' +
+        '</a>'
+      )).join('') +
+        '<a class="sec-search-all" href="' + (data.all_url || '#') + '">See all results for “' + esc(data.query) + '” →</a>';
+      box.hidden = false;
+    };
+
+    const setActive = (i) => {
+      const opts = box.querySelectorAll('.sec-search-item');
+      opts.forEach((o) => o.classList.remove('active'));
+      if (i >= 0 && i < opts.length) {
+        opts[i].classList.add('active');
+        opts[i].scrollIntoView({ block: 'nearest' });
+      }
+      active = i;
+    };
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim();
+      clearTimeout(timer);
+      if (q.length < 2) { hide(); return; }
+      timer = setTimeout(() => {
+        const my = ++token;
+        fetch(endpoint + '?q=' + encodeURIComponent(q))
+          .then((r) => r.json())
+          .then((data) => { if (my === token) render(data); })
+          .catch(hide);
+      }, 180);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      const opts = box.querySelectorAll('.sec-search-item');
+      if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(active + 1, opts.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(active - 1, 0)); }
+      else if (e.key === 'Enter') {
+        if (active >= 0 && opts[active]) { e.preventDefault(); window.location = opts[active].href; }
+        // otherwise fall through: form submits to findings list with q
+      } else if (e.key === 'Escape') { hide(); }
+    });
+
+    document.addEventListener('click', (e) => { if (!form.contains(e.target)) hide(); });
+    input.addEventListener('focus', () => { if (items.length) box.hidden = false; });
+  })();
+  </script>
 {% endblock %}

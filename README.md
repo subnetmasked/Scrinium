@@ -779,13 +779,27 @@ Routes under `/security/vulnerabilities/`:
 
 | Page | Path | Purpose |
 | ---- | ---- | ------- |
-| Dashboard | `/` | KPIs, severity breakdown, priority queue |
-| Findings | `/findings` | Filterable table, bulk assign/status |
+| Dashboard | `/` | KPIs, severity breakdown, priority queue with **owner** column, live search |
+| Findings | `/findings` | Filterable table (incl. owner filter), bulk assign/status |
 | Finding detail | `/<id>` | Overview, remediation links, workflow sidebar, evidence, comments, timeline |
 | Import | `/import` | Upload CSV or Excel (Greenbone/OpenVAS-style exports) |
 | Duplicates | `/duplicates` | Review possible duplicate groups (auditors) |
 | Exports | `/exports` | CSV registers, JSON snapshot, audit-pack ZIP |
 | Activity | `/activity` | Cross-finding event log |
+
+#### Ownership and filtering
+
+Every finding shows its **owner** — the technician who has taken responsibility for
+the fix. The dashboard priority queue and the findings table both render the owner's
+username (highlighted as **(you)** for the signed-in user) or a muted **Unassigned**
+when no one has claimed it.
+
+Technicians can narrow the work to themselves with the **Owner** filter on the
+findings list (also exposed as quick links on the dashboard):
+
+- **Assigned to me** — only findings the current user owns.
+- **Unassigned** — only findings with no owner yet.
+- **Mine or unassigned** — both, for picking up new work alongside your own queue.
 
 #### Data sources
 

@@ -24,6 +24,15 @@
           {% endfor %}
         </select>
       </label>
+      <label><span>Owner</span>
+        <select name="owner">
+          <option value="">Anyone</option>
+          <option value="mine" {% if filters.get('owner')=='mine' %}selected{% endif %}>Assigned to me</option>
+          <option value="unassigned" {% if filters.get('owner')=='unassigned' %}selected{% endif %}>Unassigned</option>
+          <option value="mine_unassigned" {% if filters.get('owner')=='mine_unassigned' %}selected{% endif %}>Mine or unassigned</option>
+          <option value="assigned" {% if filters.get('owner')=='assigned' %}selected{% endif %}>Anyone assigned</option>
+        </select>
+      </label>
       <label><span>Host contains</span><input name="host" value="{{ filters.get('host','') }}"></label>
       <label><span>Sort</span>
         <select name="sort">
@@ -75,7 +84,7 @@
           <th>Asset</th>
           <th>CVE</th>
           <th>Status</th>
-          <th>Assignee</th>
+          <th>Owner</th>
           <th>Due</th>
           <th>CVSS</th>
         </tr>
@@ -97,7 +106,13 @@
             <td class="small">{{ r.host or '—' }}{% if r.ip %}<br><span class="muted">{{ r.ip }}{% if r.port %}:{{ r.port }}{% endif %}</span>{% endif %}</td>
             <td class="small">{{ r.cve or '—' }}</td>
             <td><span class="status-pill status-{{ r.wf_status }}">{{ r.wf_status }}</span></td>
-            <td class="small">{{ user_map.get(r.assignee_user_id, '—') }}</td>
+            <td class="small">
+              {% if r.assignee_user_id %}
+                <span class="owner-chip{% if r.assignee_user_id == current_user_id %} owner-mine{% endif %}">{{ user_map.get(r.assignee_user_id, 'user #' ~ r.assignee_user_id) }}{% if r.assignee_user_id == current_user_id %} (you){% endif %}</span>
+              {% else %}
+                <span class="owner-none">Unassigned</span>
+              {% endif %}
+            </td>
             <td class="small">{% if r.due_date %}<span{% if r.due_date < today %} style="color:var(--danger)"{% endif %}>{{ r.due_date }}</span>{% else %}—{% endif %}</td>
             <td class="small">{% if r.cvss %}{{ '%.1f'|format(r.cvss) }}{% else %}—{% endif %}</td>
           </tr>

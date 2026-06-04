@@ -7,6 +7,26 @@ venv/
 .idea/
 .vscode/
 *.log
+
+# Python tooling caches
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local SQLite / scratch files (real DBs live under data/)
+*.sqlite
+*.sqlite3
+_smoke_*.py
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Runtime state and certs
 data/
 !data/.gitkeep
 nginx/certs/

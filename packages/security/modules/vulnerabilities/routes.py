@@ -12,6 +12,7 @@ from flask import (
     Response,
     abort,
     current_app,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -49,6 +50,91 @@ def _max_upload_bytes() -> int:
     return mb * 1024 * 1024
 
 
+_TERMINAL = {"closed", "false_positive", "wont_fix"}
+
+
+def _next_step(v: dict, role: str, evidence_count: int) -> dict:
+    """Plain-language guidance on what to do next, based on state and role."""
+    status = v.get("status") or "open"
+    ra = v.get("risk_accept_state") or "none"
+    has_assignee = bool(v.get("assignee_user_id"))
+
+    if ra == "requested":
+        if role in ("admin", "auditor"):
+            return {
+                "tone": "review",
+                "title": "Decide the risk-acceptance request",
+                "detail": "A technician asked to accept this risk. Review the justification and approve or reject it.",
+                "focus": "approve-risk",
+            }
+        return {
+            "tone": "wait",
+            "title": "Waiting for auditor decision",
+            "detail": "You requested risk acceptance. An auditor or admin must approve or reject it.",
+        }
+    if status == "risk_accepted":
+        until = v.get("risk_accept_until") or "expiry"
+        return {
+            "tone": "done",
+            "title": "Risk accepted",
+            "detail": f"No remediation required for now. This is monitored until {until}.",
+        }
+    if status in _TERMINAL:
+        return {
+            "tone": "done",
+            "title": "Finding resolved",
+            "detail": "No action needed. If the scanner re-detects it, it will reopen automatically.",
+        }
+    if status == "mitigated":
+        if evidence_count < 1:
+            return {
+                "tone": "action",
+                "title": "Upload evidence of the fix",
+                "detail": "Attach proof (scan result, screenshot, ticket) before this finding can be closed.",
+                "focus": "evidence",
+            }
+        return {
+            "tone": "action",
+            "title": "Close the finding",
+            "detail": "Evidence is attached. Set status to Closed and add a closure note.",
+            "focus": "status",
+        }
+    if not has_assignee:
+        return {
+            "tone": "action",
+            "title": "Assign an owner",
+            "detail": "Pick the technician who will drive remediation, then move it through triage.",
+            "focus": "assignee",
+        }
+    if status == "open":
+        return {
+            "tone": "action",
+            "title": "Triage this finding",
+            "detail": "Confirm the severity and set status to Triaged to start the SLA clock.",
+            "focus": "status",
+        }
+    if status == "triaged":
+        return {
+            "tone": "action",
+            "title": "Start remediation",
+            "detail": "When work begins, move the status to In progress.",
+            "focus": "status",
+        }
+    if status == "in_progress":
+        return {
+            "tone": "action",
+            "title": "Apply the fix, then mark Mitigated",
+            "detail": "Once remediated, set status to Mitigated and attach evidence.",
+            "focus": "status",
+        }
+    return {
+        "tone": "action",
+        "title": "Keep this finding moving",
+        "detail": "Update the status and add a note describing progress.",
+        "focus": "status",
+    }
+
+
 @bp.route("/")
 @authz.package_login_required(PKG)
 @authz.module_enabled_required(PKG, MOD)
@@ -58,14 +144,51 @@ def dashboard():
     stats["severity_max"] = max(1, max(by.values()) if by else 1)
     last_sync = db.last_sync_run()
     recent = db.list_vulnerabilities(limit=12, sort="severity")
-    role = _role()
+    users = auth.list_users()
+    user_map = {int(u["id"]): u["username"] for u in users}
+    user = auth.current_user()
     return render_template(
         "security/vulnerabilities/dashboard.html",
         stats=stats,
         last_sync=last_sync,
         recent=recent,
-        role=role,
+        user_map=user_map,
+        current_user_id=int(user["id"]) if user else None,
+        role=_role(),
         hide_sidebar=True,
+    )
+
+
+@bp.route("/api/search")
+@authz.package_login_required(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def api_search():
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"results": [], "query": q})
+    rows = db.list_vulnerabilities(q=q, limit=12, sort="severity")
+    users = auth.list_users()
+    user_map = {int(u["id"]): u["username"] for u in users}
+    results = [
+        {
+            "id": r["id"],
+            "title": r.get("title") or r.get("external_id"),
+            "host": r.get("host") or r.get("ip") or "",
+            "cve": r.get("cve") or "",
+            "severity": r.get("severity") or "info",
+            "status": r.get("wf_status") or "open",
+            "kev": bool(r.get("kev")),
+            "assignee": user_map.get(r.get("assignee_user_id"), ""),
+            "url": url_for("vuln.detail", vuln_id=r["id"]),
+        }
+        for r in rows
+    ]
+    return jsonify(
+        {
+            "results": results,
+            "query": q,
+            "all_url": url_for("vuln.findings_list", q=q),
+        }
     )
 
 
@@ -74,10 +197,13 @@ def dashboard():
 @authz.module_enabled_required(PKG, MOD)
 def findings_list():
     role = _role()
+    user = auth.current_user()
     rows = db.list_vulnerabilities(
         status=request.args.get("status") or None,
         severity=request.args.get("severity") or None,
         assignee_id=int(request.args["assignee"]) if request.args.get("assignee") else None,
+        owner_filter=request.args.get("owner") or None,
+        current_user_id=int(user["id"]) if user else None,
         host_like=request.args.get("host") or None,
         tag=request.args.get("tag") or None,
         kev_only=bool(request.args.get("kev")),
@@ -93,6 +219,7 @@ def findings_list():
         rows=rows,
         users=users,
         user_map=user_map,
+        current_user_id=int(user["id"]) if user else None,
         today=date.today().isoformat(),
         role=role,
         filters=request.args,
@@ -145,6 +272,7 @@ def detail(vuln_id: int):
         cve=v.get("cve") or "",
         refs=refs,
     )
+    next_step = _next_step(v, role, len(evidence))
     return render_template(
         "security/vulnerabilities/detail.html",
         v=v,
@@ -156,6 +284,7 @@ def detail(vuln_id: int):
         assignee_name=assignee_name,
         refs=refs,
         remediation_links=remediation_links,
+        next_step=next_step,
         role=role,
         hide_sidebar=True,
     )

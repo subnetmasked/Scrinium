@@ -6,15 +6,21 @@
   <div class="sec-detail-hero">
     <h1>{{ v.title or v.external_id }}</h1>
     <div class="sec-meta-row">
-      <span class="sev-badge sev-{{ v.severity }}">{{ v.severity }}</span>
+      <span class="sev-badge sev-{{ v.severity }} has-tip" tabindex="0"
+            data-tip="Overall risk rating used for prioritisation and SLA targets.">{{ v.severity }}</span>
       {% if v.scanner_severity and v.scanner_severity != v.severity %}
-        <span class="muted small">scanner: {{ v.scanner_severity }}</span>
+        <span class="muted small has-tip" tabindex="0"
+              data-tip="Severity reported by the scanner before any manual override.">scanner: {{ v.scanner_severity }}</span>
       {% endif %}
-      <span class="status-pill status-{{ status }}">{{ status }}</span>
+      <span class="status-pill status-{{ status }} has-tip" tabindex="0"
+            data-tip="Where this finding sits in the remediation workflow.">{{ status }}</span>
       {% if v.priority %}<span class="priority-pill">{{ v.priority }}</span>{% endif %}
-      {% if v.kev %}<span class="kev-badge">KEV</span>{% endif %}
-      {% if v.exploit_available %}<span class="exploit-badge">Exploit available</span>{% endif %}
-      {% if v.risk_accept_state == 'requested' %}<span class="pending-badge">Risk acceptance pending</span>{% endif %}
+      {% if v.kev %}<span class="kev-badge has-tip" tabindex="0"
+            data-tip="Listed in CISA's Known Exploited Vulnerabilities catalog — confirmed exploited in the wild. Treat as urgent.">KEV</span>{% endif %}
+      {% if v.exploit_available %}<span class="exploit-badge has-tip" tabindex="0"
+            data-tip="Public exploit code or a weaponised proof-of-concept is known to exist.">Exploit available</span>{% endif %}
+      {% if v.risk_accept_state == 'requested' %}<span class="pending-badge has-tip" tabindex="0"
+            data-tip="A technician has requested to formally accept this risk; an auditor must decide.">Risk acceptance pending</span>{% endif %}
     </div>
     <p class="muted small"><a href="{{ url_for('vuln.findings_list') }}">← All findings</a></p>
   </div>
@@ -22,18 +28,18 @@
   <div class="sec-detail-layout">
     <main>
       <dl class="sec-facts">
-        <div><dt>Host</dt><dd>{{ v.host or '—' }}</dd></div>
-        <div><dt>Address</dt><dd>{% if v.ip %}{{ v.ip }}{% if v.port %}:{{ v.port }}{% endif %}{% else %}—{% endif %}</dd></div>
-        <div><dt>Service</dt><dd>{{ v.service or '—' }}</dd></div>
-        <div><dt>CVE</dt><dd>{% if v.cve %}<code>{{ v.cve }}</code>{% else %}—{% endif %}</dd></div>
-        <div><dt>CWE</dt><dd>{{ v.cwe or '—' }}</dd></div>
-        <div><dt>CVSS</dt><dd>{% if v.cvss %}{{ '%.1f'|format(v.cvss) }}{% if v.cvss_vector %} <span class="muted small">({{ v.cvss_vector }})</span>{% endif %}{% else %}—{% endif %}</dd></div>
-        <div><dt>EPSS</dt><dd>{% if v.epss is not none %}{{ '%.2f'|format(v.epss) }}{% else %}—{% endif %}</dd></div>
-        <div><dt>Assignee</dt><dd>{{ assignee_name or 'Unassigned' }}</dd></div>
-        <div><dt>Due</dt><dd>{{ v.due_date or '—' }}</dd></div>
-        <div><dt>First seen</dt><dd>{{ (v.first_seen or '')[:10] or '—' }}</dd></div>
-        <div><dt>Last seen</dt><dd>{{ (v.last_seen or '')[:19].replace('T',' ') or '—' }}</dd></div>
-        <div><dt>External ID</dt><dd><code>{{ v.external_id }}</code></dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="Hostname of the affected asset.">Host</dt><dd>{{ v.host or '—' }}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="IP address and port where the issue was detected.">Address</dt><dd>{% if v.ip %}{{ v.ip }}{% if v.port %}:{{ v.port }}{% endif %}{% else %}—{% endif %}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="Network service or product exposed on that port (e.g. ssh, http).">Service</dt><dd>{{ v.service or '—' }}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="Common Vulnerabilities and Exposures ID — the specific, publicly catalogued vulnerability.">CVE</dt><dd>{% if v.cve %}<code>{{ v.cve }}</code>{% else %}—{% endif %}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="Common Weakness Enumeration — the category of underlying flaw (e.g. CWE-79 = cross-site scripting).">CWE</dt><dd>{{ v.cwe or '—' }}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="Common Vulnerability Scoring System — severity from 0–10 based on impact if exploited.">CVSS</dt><dd>{% if v.cvss %}{{ '%.1f'|format(v.cvss) }}{% if v.cvss_vector %} <span class="muted small">({{ v.cvss_vector }})</span>{% endif %}{% else %}—{% endif %}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="Exploit Prediction Scoring System — probability (0–1) that this will be exploited in the next 30 days.">EPSS</dt><dd>{% if v.epss is not none %}{{ '%.2f'|format(v.epss) }}{% else %}—{% endif %}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="Technician responsible for remediating this finding.">Assignee</dt><dd>{{ assignee_name or 'Unassigned' }}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="SLA deadline to remediate, derived from severity and set when the finding is triaged.">Due</dt><dd>{{ v.due_date or '—' }}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="First time a scan reported this finding.">First seen</dt><dd>{{ (v.first_seen or '')[:10] or '—' }}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="Most recent scan or sync that still reported this finding.">Last seen</dt><dd>{{ (v.last_seen or '')[:19].replace('T',' ') or '—' }}</dd></div>
+        <div><dt class="has-tip" tabindex="0" data-tip="Identifier from the scanner or import source, used to match and de-duplicate findings.">External ID</dt><dd><code>{{ v.external_id }}</code></dd></div>
       </dl>
 
       {% if tags %}
@@ -107,28 +113,41 @@
     </main>
 
     <aside>
+      <div class="sec-next-step tone-{{ next_step.tone }}"{% if next_step.focus %} data-focus="{{ next_step.focus }}"{% endif %}>
+        <p class="sec-next-step-kicker">Next step</p>
+        <p class="sec-next-step-title">{{ next_step.title }}</p>
+        <p class="sec-next-step-detail">{{ next_step.detail }}</p>
+        {% if next_step.focus %}<button type="button" class="sec-next-step-jump" data-jump="{{ next_step.focus }}">Take me there</button>{% endif %}
+      </div>
+
       {% if role in ('admin','technician') %}
-      <div class="sec-side-card">
-        <h3>Workflow</h3>
-        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
+      <div class="sec-side-card" data-card="status">
+        <h3>Update status</h3>
+        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack" data-status-form>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="status">
           <label><span>Status</span>
-            <select name="status">
+            <select name="status" data-status-select>
               {% for s in ['open','triaged','in_progress','mitigated','closed','false_positive','wont_fix','duplicate'] %}
                 <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s }}</option>
               {% endfor %}
             </select>
           </label>
-          <label><span>Note</span><textarea name="note" rows="2" placeholder="Closure or transition note"></textarea></label>
-          <label><span>False positive reason</span><input name="false_positive_reason" value="{{ v.false_positive_reason or '' }}"></label>
-          <button class="btn primary" type="submit">Update status</button>
+          <label data-when="false_positive" hidden><span>False-positive reason</span><input name="false_positive_reason" value="{{ v.false_positive_reason or '' }}"></label>
+          <label data-when="duplicate" hidden><span>Duplicate of (finding ID)</span><input name="duplicate_of" type="number" min="1" placeholder="e.g. 42"></label>
+          <label><span>Explanation <em class="req-mark">required</em></span>
+            <textarea name="note" rows="3" required placeholder="Why are you changing the status? This is saved to the timeline."></textarea>
+          </label>
+          <button class="btn primary" type="submit">Save status</button>
         </form>
-        <hr class="sec-divider">
+      </div>
+
+      <div class="sec-side-card" data-card="assignee">
+        <h3>Owner</h3>
         <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="assign">
-          <label><span>Assignee</span>
+          <label><span>Assigned technician</span>
             <select name="assignee_id">
               <option value="">— Unassigned —</option>
               {% for u in users %}
@@ -136,36 +155,48 @@
               {% endfor %}
             </select>
           </label>
-          <button class="btn" type="submit">Save assignee</button>
+          <button class="btn" type="submit">Save owner</button>
         </form>
-        <hr class="sec-divider">
-        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="action" value="severity">
-          <label><span>Override severity</span>
-            <select name="severity">
-              {% for s in ['critical','high','medium','low','info'] %}
-                <option value="{{ s }}" {% if v.severity==s %}selected{% endif %}>{{ s }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <button class="btn" type="submit">Apply override</button>
-        </form>
-        {% if v.risk_accept_state != 'requested' and status not in ('risk_accepted',) %}
-        <hr class="sec-divider">
-        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="action" value="request_risk_accept">
-          <label><span>Risk acceptance reason</span><textarea name="reason" rows="2"></textarea></label>
-          <label><span>Expires</span><input type="date" name="until"></label>
-          <button class="btn" type="submit">Request risk acceptance</button>
-        </form>
-        {% endif %}
       </div>
+
+      <details class="sec-side-card sec-more">
+        <summary>More actions</summary>
+        <div class="sec-more-body">
+          <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="severity">
+            <label><span>Override severity</span>
+              <select name="severity">
+                {% for s in ['critical','high','medium','low','info'] %}
+                  <option value="{{ s }}" {% if v.severity==s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <button class="btn" type="submit">Apply override</button>
+          </form>
+          {% if v.risk_accept_state != 'requested' and status not in ('risk_accepted',) %}
+          <hr class="sec-divider">
+          <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="request_risk_accept">
+            <label><span>Request risk acceptance — reason</span><textarea name="reason" rows="2" placeholder="Why is this risk acceptable for now?"></textarea></label>
+            <label><span>Expires</span><input type="date" name="until"></label>
+            <button class="btn" type="submit">Request risk acceptance</button>
+          </form>
+          {% endif %}
+          <hr class="sec-divider">
+          <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="tags">
+            <label><span>Tags (one per line)</span><textarea name="tags" rows="2">{{ tags|join('\n') }}</textarea></label>
+            <button class="btn" type="submit">Update tags</button>
+          </form>
+        </div>
+      </details>
       {% endif %}
 
       {% if v.risk_accept_state == 'requested' and role in ('admin','auditor') %}
-      <div class="sec-side-card accent-border">
+      <div class="sec-side-card accent-border" data-card="approve-risk">
         <h3>Approve risk acceptance</h3>
         <p class="small">{{ v.risk_accept_reason }}</p>
         <p class="muted small">Until {{ v.risk_accept_until or '—' }}</p>
@@ -178,7 +209,7 @@
       </div>
       {% endif %}
 
-      <div class="sec-side-card">
+      <div class="sec-side-card" data-card="evidence">
         <h3>Evidence</h3>
         <ul class="small" style="list-style:none;padding:0;margin:0 0 0.75rem">
           {% for e in evidence %}
@@ -219,22 +250,12 @@
         {% endif %}
       </div>
 
-      {% if role in ('admin','technician') %}
-      <div class="sec-side-card">
-        <h3>Tags</h3>
-        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="action" value="tags">
-          <textarea name="tags" rows="2" placeholder="One tag per line">{{ tags|join('\n') }}</textarea>
-          <button class="btn" type="submit">Update tags</button>
-        </form>
-      </div>
-      {% endif %}
     </aside>
   </div>
 
   <script>
   (function () {
+    // Detail tabs
     const tabs = document.querySelectorAll('.sec-tab');
     const panels = document.querySelectorAll('.sec-tab-panel');
     tabs.forEach((tab) => {
@@ -244,6 +265,42 @@
         panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === id));
       });
     });
+
+    // Status form: reveal contextual fields for the chosen status
+    const sel = document.querySelector('[data-status-select]');
+    if (sel) {
+      const form = sel.closest('form');
+      const sync = () => {
+        form.querySelectorAll('[data-when]').forEach((el) => {
+          const match = el.dataset.when === sel.value;
+          el.hidden = !match;
+          const input = el.querySelector('input, textarea, select');
+          if (input) {
+            if (sel.value === 'duplicate' && el.dataset.when === 'duplicate') {
+              input.required = match;
+            }
+          }
+        });
+      };
+      sel.addEventListener('change', sync);
+      sync();
+    }
+
+    // Next-step: jump to and highlight the relevant card
+    const banner = document.querySelector('.sec-next-step[data-focus]');
+    const focusCard = (key) => {
+      const card = document.querySelector('[data-card="' + key + '"]');
+      if (!card) return;
+      if (card.tagName === 'DETAILS') card.open = true;
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.add('card-flash');
+      const field = card.querySelector('select, textarea, input:not([type=hidden])');
+      if (field) setTimeout(() => field.focus({ preventScroll: true }), 350);
+      setTimeout(() => card.classList.remove('card-flash'), 1600);
+    };
+    const jump = document.querySelector('[data-jump]');
+    if (jump) jump.addEventListener('click', () => focusCard(jump.dataset.jump));
+    if (banner) banner.querySelector('.sec-next-step-title')?.addEventListener('click', () => focusCard(banner.dataset.focus));
   })();
   </script>
 {% endblock %}

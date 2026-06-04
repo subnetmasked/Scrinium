@@ -38,6 +38,13 @@ def set_status(
     old = v.get("status") or "open"
     if role not in ("admin", "technician"):
         raise WorkflowError("Technician role required.")
+    # Every status change must carry an explanation. For false positives the
+    # dedicated reason field counts as the explanation.
+    explanation = (note or "").strip()
+    if new_status == "false_positive":
+        explanation = explanation or (false_positive_reason or "").strip()
+    if not explanation:
+        raise WorkflowError("Please add a note explaining this status change.")
     if new_status == "closed":
         if old != "mitigated" and not admin_override:
             raise WorkflowError("Close requires mitigated status first.")

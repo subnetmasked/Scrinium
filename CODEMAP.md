@@ -223,7 +223,7 @@ Package(
 
 | File | Responsibility |
 | ---- | -------------- |
-| `db.py` | Schema, queries, `upsert_vulnerability`, dashboard stats, duplicate detection |
+| `db.py` | Schema, queries (`list_vulnerabilities` incl. `owner_filter` mine/unassigned/both), `upsert_vulnerability`, dashboard stats, duplicate detection |
 | `identity.py` | Canonical fingerprint: CVE/title + host/IP + port → `identity_key` |
 | `remediation.py` | No fake solutions; NVD/CVE.org links from `refs_text` + CVE |
 | `import_data.py` | CSV + XLSX import (Greenbone-style columns), `ImportResult` |
@@ -264,8 +264,8 @@ Migrate adds `identity_key` column on existing installs and backfills.
 | -------- | ------- |
 | `vuln_base.html` | Extends `base.html`, `area-security` body class, loads `security.css` |
 | `_vuln_nav.html` | Sub-nav: Dashboard, Findings, Import, Duplicates, Exports, Activity |
-| `vulnerabilities/dashboard.html` | KPIs, severity bars, priority queue |
-| `vulnerabilities/list.html` | Filters, bulk bar, findings table |
+| `vulnerabilities/dashboard.html` | KPIs, severity bars, priority queue (owner column), live search, owner quick-links |
+| `vulnerabilities/list.html` | Filters (status/severity/owner/host/sort), bulk bar, findings table |
 | `vulnerabilities/detail.html` | Tabs (Overview / Remediation / Activity), workflow sidebar |
 | `vulnerabilities/import.html` | File upload zone |
 | `vulnerabilities/duplicates.html` | Duplicate group review |

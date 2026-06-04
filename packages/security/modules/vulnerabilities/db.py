@@ -291,6 +291,8 @@ def list_vulnerabilities(
     status: str | None = None,
     severity: str | None = None,
     assignee_id: int | None = None,
+    owner_filter: str | None = None,
+    current_user_id: int | None = None,
     host_like: str | None = None,
     tag: str | None = None,
     kev_only: bool = False,
@@ -312,6 +314,16 @@ def list_vulnerabilities(
     if assignee_id is not None:
         clauses.append("w.assignee_user_id = ?")
         args.append(assignee_id)
+    if owner_filter == "mine" and current_user_id is not None:
+        clauses.append("w.assignee_user_id = ?")
+        args.append(current_user_id)
+    elif owner_filter == "unassigned":
+        clauses.append("w.assignee_user_id IS NULL")
+    elif owner_filter == "mine_unassigned" and current_user_id is not None:
+        clauses.append("(w.assignee_user_id = ? OR w.assignee_user_id IS NULL)")
+        args.append(current_user_id)
+    elif owner_filter == "assigned":
+        clauses.append("w.assignee_user_id IS NOT NULL")
     if host_like:
         clauses.append("(v.host LIKE ? OR v.ip LIKE ? OR v.title LIKE ?)")
         pat = f"%{host_like}%"
