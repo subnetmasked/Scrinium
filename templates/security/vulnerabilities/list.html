@@ -6,11 +6,11 @@
 {% endblock %}
 {% block vuln_body %}
   <div class="sec-view-tabs" role="tablist">
-    <a href="{{ url_for('vuln.findings_list') }}" class="sec-view-tab{% if view == 'active' %} active{% endif %}">Active work</a>
+    <a href="{{ url_for('vuln.findings_list') }}" class="sec-view-tab{% if view == 'active' %} active{% endif %}">Active work{% if role == 'technician' %} &amp; awaiting approval{% endif %}</a>
     {% if role in ('admin','auditor') %}
-      <a href="{{ url_for('vuln.findings_list', view='review') }}" class="sec-view-tab{% if view == 'review' %} active{% endif %}">Awaiting closure</a>
+      <a href="{{ url_for('vuln.findings_list', view='review') }}" class="sec-view-tab{% if view == 'review' %} active{% endif %}">Awaiting final approval</a>
+      <a href="{{ url_for('vuln.findings_list', view='resolved') }}" class="sec-view-tab{% if view == 'resolved' %} active{% endif %}">Closed &amp; resolved</a>
     {% endif %}
-    <a href="{{ url_for('vuln.findings_list', view='resolved') }}" class="sec-view-tab{% if view == 'resolved' %} active{% endif %}">Closed &amp; resolved</a>
     <a href="{{ url_for('vuln.findings_list', view='all') }}" class="sec-view-tab{% if view == 'all' %} active{% endif %}">All</a>
   </div>
 
@@ -21,7 +21,7 @@
       <label><span>Status</span>
         <select name="status">
           <option value="">Any</option>
-          {% for s in ['open','triaged','in_progress','mitigated','closed','false_positive','risk_accepted','wont_fix','duplicate'] %}
+          {% for s in ['open','triaged','in_progress','pending_review','mitigated','closed','false_positive','risk_accepted','wont_fix','duplicate'] %}
             <option value="{{ s }}" {% if filters.get('status')==s %}selected{% endif %}>{{ s }}</option>
           {% endfor %}
         </select>
@@ -78,7 +78,6 @@
       <select name="status">
         <option value="triaged">triaged</option>
         <option value="in_progress">in_progress</option>
-        <option value="mitigated">mitigated</option>
       </select>
       <button class="btn" type="submit">Apply to selected</button>
     </div>

@@ -12,8 +12,8 @@
     <a class="sec-subnav-link{% if on_findings and cur_view not in ('review','resolved') %} active{% endif %}" href="{{ url_for('vuln.findings_list') }}">Findings</a>
     {% if role in ('admin','auditor') %}
       <a class="sec-subnav-link{% if on_findings and cur_view == 'review' %} active{% endif %}" href="{{ url_for('vuln.findings_list', view='review') }}">Reviews</a>
+      <a class="sec-subnav-link{% if on_findings and cur_view == 'resolved' %} active{% endif %}" href="{{ url_for('vuln.findings_list', view='resolved') }}">Closed</a>
     {% endif %}
-    <a class="sec-subnav-link{% if on_findings and cur_view == 'resolved' %} active{% endif %}" href="{{ url_for('vuln.findings_list', view='resolved') }}">Closed</a>
     {% if role in ('admin','technician') %}
       <a class="sec-subnav-link{% if ep == 'vuln.import_page' %} active{% endif %}" href="{{ url_for('vuln.import_page') }}">Import</a>
     {% endif %}

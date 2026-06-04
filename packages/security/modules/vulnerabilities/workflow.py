@@ -9,10 +9,10 @@ from packages.security.modules.vulnerabilities import db
 
 PKG = "security"
 VALID_STATUSES = frozenset({
-    "open", "triaged", "in_progress", "mitigated", "pending_closure", "closed",
+    "open", "triaged", "in_progress", "pending_review", "mitigated", "closed",
     "false_positive", "risk_accepted", "wont_fix", "duplicate",
 })
-TERMINAL = frozenset({"closed", "false_positive", "wont_fix"})
+TERMINAL = frozenset({"mitigated", "closed", "false_positive", "wont_fix"})
 
 # Status groups drive where a finding shows up.
 #   ACTIVE   — a technician still has work to do; shown in the active findings
@@ -20,17 +20,14 @@ TERMINAL = frozenset({"closed", "false_positive", "wont_fix"})
 #   REVIEW   — work is done and is waiting for an auditor to sign off; only
 #              surfaced in the auditor review queue, not the technician list.
 #   RESOLVED — finalised; archived in the "Closed" list, no technician action.
-ACTIVE_STATUSES = frozenset({"open", "triaged", "in_progress", "mitigated"})
-REVIEW_STATUSES = frozenset({"pending_closure"})
+ACTIVE_STATUSES = frozenset({"open", "triaged", "in_progress"})
+REVIEW_STATUSES = frozenset({"pending_review"})
 RESOLVED_STATUSES = frozenset({
-    "closed", "false_positive", "wont_fix", "risk_accepted", "duplicate",
+    "mitigated", "closed", "false_positive", "wont_fix", "risk_accepted", "duplicate",
 })
-# Statuses a technician picks directly. Closing now goes through an auditor,
-# so "closed" is not in the dropdown — technicians submit for closure instead.
-TECHNICIAN_STATUS_CHOICES = (
-    "open", "triaged", "in_progress", "mitigated",
-    "false_positive", "wont_fix", "duplicate",
-)
+FINAL_APPROVAL_STATUSES = frozenset({"mitigated", "closed", "false_positive", "wont_fix"})
+TECHNICIAN_STATUS_CHOICES = ("open", "triaged", "in_progress", "duplicate")
+RESOLUTION_STATUS_CHOICES = ("mitigated", "closed", "wont_fix", "false_positive")
 
 
 def status_group(status: str | None) -> str:
@@ -72,33 +69,9 @@ def set_status(
         explanation = explanation or (false_positive_reason or "").strip()
     if not explanation:
         raise WorkflowError("Please add a note explaining this status change.")
-    if new_status == "closed":
-        # Closing is an auditor decision. Technicians submit for closure and an
-        # auditor signs off; only an admin override can close directly here.
-        if not admin_override:
-            raise WorkflowError(
-                "Closing requires auditor sign-off. Use “Submit for closure” instead."
-            )
-        if db.evidence_count(vuln_id) < 1:
-            raise WorkflowError("At least one evidence file is required to close.")
-        db.update_workflow(
-            vuln_id,
-            status="closed",
-            closed_at=datetime.now(timezone.utc).isoformat(),
-            closed_by=int(user["id"]),
-            mitigation_note=(note or v.get("mitigation_note") or "").strip(),
-        )
-    elif new_status == "pending_closure":
-        raise WorkflowError("Use “Submit for closure” to send a finding for review.")
-    elif new_status == "false_positive":
-        if not (false_positive_reason or note or "").strip():
-            raise WorkflowError("False positive requires a reason.")
-        db.update_workflow(
-            vuln_id,
-            status="false_positive",
-            false_positive_reason=(false_positive_reason or note).strip(),
-        )
-    elif new_status == "duplicate":
+    if new_status in FINAL_APPROVAL_STATUSES or new_status == "pending_review":
+        raise WorkflowError("Use “Submit for final approval” for this outcome.")
+    if new_status == "duplicate":
         if not duplicate_of_id:
             raise WorkflowError("Duplicate requires a canonical vulnerability id.")
         db.update_workflow(
@@ -106,10 +79,6 @@ def set_status(
             status="duplicate",
             duplicate_of_id=duplicate_of_id,
         )
-    elif new_status == "wont_fix":
-        if not (note or "").strip():
-            raise WorkflowError("Won't fix requires a reason.")
-        db.update_workflow(vuln_id, status="wont_fix", mitigation_note=note.strip())
     else:
         db.update_workflow(vuln_id, status=new_status)
         if new_status == "triaged":
@@ -122,62 +91,113 @@ def set_status(
     audit.record("vuln.status_change", target=str(vuln_id), details={"from": old, "to": new_status})
 
 
-def submit_for_closure(vuln_id: int, *, note: str, user: Any, role: str) -> None:
-    """Technician hands a remediated finding to an auditor for closure sign-off."""
+def submit_for_resolution(
+    vuln_id: int,
+    *,
+    proposed_status: str,
+    note: str,
+    false_positive_reason: str = "",
+    user: Any,
+    role: str,
+) -> None:
+    """Technician submits a final outcome for auditor/admin approval."""
     if role not in ("admin", "technician"):
         raise WorkflowError("Technician role required.")
+    if proposed_status not in FINAL_APPROVAL_STATUSES:
+        raise WorkflowError("Choose a valid final outcome.")
     v = db.get_vulnerability(vuln_id)
     if not v:
         raise WorkflowError("Vulnerability not found.")
     old = v.get("status") or "open"
-    if old == "pending_closure":
-        raise WorkflowError("This finding is already awaiting closure review.")
-    if old != "mitigated":
-        raise WorkflowError("Mark the finding as Mitigated before submitting it for closure.")
-    if db.evidence_count(vuln_id) < 1:
-        raise WorkflowError("Attach at least one evidence file before submitting for closure.")
-    if not (note or "").strip():
-        raise WorkflowError("Add a closure summary describing the remediation.")
-    db.update_workflow(
+    if old == "pending_review":
+        raise WorkflowError("This finding is already awaiting final approval.")
+    if old in RESOLVED_STATUSES:
+        raise WorkflowError("This finding is already resolved.")
+    explanation = (note or "").strip()
+    fp_reason = (false_positive_reason or "").strip()
+    if proposed_status in ("mitigated", "closed"):
+        if db.evidence_count(vuln_id) < 1:
+            raise WorkflowError("Attach at least one evidence file before submitting this outcome.")
+        if not explanation:
+            raise WorkflowError("Add a summary describing what was remediated.")
+    elif proposed_status == "wont_fix":
+        if not explanation:
+            raise WorkflowError("Won't fix requires a reason.")
+    elif proposed_status == "false_positive" and not (fp_reason or explanation):
+        raise WorkflowError("False positive requires a reason.")
+    updates = {
+        "status": "pending_review",
+        "proposed_status": proposed_status,
+        "previous_status": old,
+        "previous_assignee_user_id": v.get("assignee_user_id"),
+        "resolution_submitted_by": int(user["id"]),
+        "resolution_submitted_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if proposed_status == "false_positive":
+        updates["false_positive_reason"] = fp_reason or explanation
+    else:
+        updates["mitigation_note"] = explanation
+    db.update_workflow(vuln_id, **updates)
+    db.add_event(
         vuln_id,
-        status="pending_closure",
-        mitigation_note=note.strip(),
-        closure_submitted_by=int(user["id"]),
-        closure_submitted_at=datetime.now(timezone.utc).isoformat(),
+        "vuln.resolution_submitted",
+        old_value=old,
+        new_value=proposed_status,
+        note=explanation or fp_reason,
     )
-    db.add_event(vuln_id, "vuln.closure_submitted", old_value=old, new_value="pending_closure", note=note)
-    audit.record("vuln.closure_submitted", target=str(vuln_id))
+    audit.record(
+        "vuln.resolution_submitted",
+        target=str(vuln_id),
+        details={"from": old, "proposed": proposed_status},
+    )
 
 
-def decide_closure(vuln_id: int, *, approve: bool, note: str, user: Any, role: str) -> None:
-    """Auditor (or admin) accepts the completed remediation, or sends it back."""
+def decide_resolution(vuln_id: int, *, approve: bool, note: str, user: Any, role: str) -> None:
+    """Auditor (or admin) accepts a final outcome, or sends it back."""
     if role not in ("admin", "auditor"):
         raise WorkflowError("Auditor approval required.")
     v = db.get_vulnerability(vuln_id)
     if not v:
         raise WorkflowError("Not found.")
-    if (v.get("status") or "") != "pending_closure":
-        raise WorkflowError("This finding is not awaiting closure review.")
-    submitter = v.get("closure_submitted_by")
+    if (v.get("status") or "") != "pending_review":
+        raise WorkflowError("This finding is not awaiting final approval.")
+    proposed = v.get("proposed_status") or ""
+    if proposed not in FINAL_APPROVAL_STATUSES:
+        raise WorkflowError("This review item has no valid proposed outcome.")
+    submitter = v.get("resolution_submitted_by") or v.get("closure_submitted_by")
     if approve and submitter and int(submitter) == int(user["id"]) and role != "admin":
-        raise WorkflowError("You cannot approve a closure you submitted.")
+        raise WorkflowError("You cannot approve a final outcome you submitted.")
     now = datetime.now(timezone.utc).isoformat()
     if approve:
-        db.update_workflow(
-            vuln_id,
-            status="closed",
-            closed_at=now,
-            closed_by=int(user["id"]),
-            mitigation_note=(note.strip() or v.get("mitigation_note") or "").strip(),
-        )
-        db.add_event(vuln_id, "vuln.closure_approved", old_value="pending_closure", new_value="closed", note=note)
-        audit.record("vuln.closure_approved", target=str(vuln_id))
+        updates = {
+            "status": proposed,
+            "proposed_status": None,
+            "previous_status": None,
+            "previous_assignee_user_id": None,
+        }
+        if proposed == "closed":
+            updates["closed_at"] = now
+            updates["closed_by"] = int(user["id"])
+        if note.strip() and proposed in ("mitigated", "closed", "wont_fix"):
+            updates["mitigation_note"] = note.strip()
+        db.update_workflow(vuln_id, **updates)
+        db.add_event(vuln_id, "vuln.resolution_approved", old_value="pending_review", new_value=proposed, note=note)
+        audit.record("vuln.resolution_approved", target=str(vuln_id), details={"status": proposed})
     else:
         if not (note or "").strip():
-            raise WorkflowError("Add a note explaining why the closure is rejected.")
-        db.update_workflow(vuln_id, status="mitigated")
-        db.add_event(vuln_id, "vuln.closure_rejected", old_value="pending_closure", new_value="mitigated", note=note)
-        audit.record("vuln.closure_rejected", target=str(vuln_id))
+            raise WorkflowError("Add a note explaining why this is denied.")
+        previous_status = v.get("previous_status") or "in_progress"
+        previous_assignee = v.get("previous_assignee_user_id") or v.get("assignee_user_id")
+        db.update_workflow(
+            vuln_id,
+            status=previous_status,
+            assignee_user_id=previous_assignee,
+            proposed_status=None,
+            previous_status=None,
+            previous_assignee_user_id=None,
+        )
+        db.add_event(vuln_id, "vuln.resolution_denied", old_value="pending_review", new_value=previous_status, note=note)
+        audit.record("vuln.resolution_denied", target=str(vuln_id), details={"returned_to": previous_status})
 
 
 def assign(vuln_id: int, assignee_id: int | None, *, user: Any, role: str) -> None:

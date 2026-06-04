@@ -50,7 +50,7 @@ def _max_upload_bytes() -> int:
     return mb * 1024 * 1024
 
 
-_TERMINAL = {"closed", "false_positive", "wont_fix"}
+_TERMINAL = {"mitigated", "closed", "false_positive", "wont_fix", "duplicate"}
 
 
 def _next_step(v: dict, role: str, evidence_count: int) -> dict:
@@ -59,18 +59,19 @@ def _next_step(v: dict, role: str, evidence_count: int) -> dict:
     ra = v.get("risk_accept_state") or "none"
     has_assignee = bool(v.get("assignee_user_id"))
 
-    if status == "pending_closure":
+    if status == "pending_review":
+        proposed = v.get("proposed_status") or "final outcome"
         if role in ("admin", "auditor"):
             return {
                 "tone": "review",
-                "title": "Review the completed remediation",
-                "detail": "A technician submitted this finding for closure. Verify the evidence and approve, or send it back.",
-                "focus": "approve-closure",
+                "title": "Review the proposed final outcome",
+                "detail": f"A technician submitted this as {proposed}. Verify the notes and evidence, then approve or send it back.",
+                "focus": "approve-resolution",
             }
         return {
             "tone": "wait",
-            "title": "Waiting for auditor sign-off",
-            "detail": "You submitted this for closure. An auditor or admin must review the evidence and approve it.",
+            "title": "Awaiting final approval",
+            "detail": f"This is waiting for an auditor or admin to approve the proposed outcome: {proposed}.",
         }
     if ra == "requested":
         if role in ("admin", "auditor"):
@@ -98,20 +99,6 @@ def _next_step(v: dict, role: str, evidence_count: int) -> dict:
             "title": "Finding resolved",
             "detail": "No action needed. If the scanner re-detects it, it will reopen automatically.",
         }
-    if status == "mitigated":
-        if evidence_count < 1:
-            return {
-                "tone": "action",
-                "title": "Upload evidence of the fix",
-                "detail": "Attach proof (scan result, screenshot, ticket) before this finding can be submitted for closure.",
-                "focus": "evidence",
-            }
-        return {
-            "tone": "action",
-            "title": "Submit for closure review",
-            "detail": "Evidence is attached. Submit the finding so an auditor can verify the work and close it.",
-            "focus": "submit-closure",
-        }
     if not has_assignee:
         return {
             "tone": "action",
@@ -136,9 +123,9 @@ def _next_step(v: dict, role: str, evidence_count: int) -> dict:
     if status == "in_progress":
         return {
             "tone": "action",
-            "title": "Apply the fix, then mark Mitigated",
-            "detail": "Once remediated, set status to Mitigated and attach evidence.",
-            "focus": "status",
+            "title": "Submit the final outcome",
+            "detail": "When work is done, submit Mitigated, Closed, Won't fix, or False positive for auditor approval.",
+            "focus": "submit-resolution",
         }
     return {
         "tone": "action",
@@ -226,7 +213,14 @@ def findings_list():
     # Default to the active work queue; a specific status, search, or risk
     # filter implies the user wants to reach beyond it, so show everything.
     view = request.args.get("view") or ("all" if (q or explicit_status or pending_ra) else "active")
-    statuses = None if view == "all" else _STATUS_VIEWS.get(view, _STATUS_VIEWS["active"])
+    if role not in ("admin", "auditor") and view in ("review", "resolved"):
+        view = "active"
+    if view == "all":
+        statuses = None
+    elif view == "active" and role == "technician":
+        statuses = list(workflow.ACTIVE_STATUSES | workflow.REVIEW_STATUSES)
+    else:
+        statuses = _STATUS_VIEWS.get(view, _STATUS_VIEWS["active"])
     rows = db.list_vulnerabilities(
         status=explicit_status,
         statuses=statuses,
@@ -304,11 +298,12 @@ def detail(vuln_id: int):
         refs=refs,
     )
     next_step = _next_step(v, role, len(evidence))
-    closure_submitter = None
-    if v.get("closure_submitted_by"):
+    resolution_submitter = None
+    submitter_id = v.get("resolution_submitted_by") or v.get("closure_submitted_by")
+    if submitter_id:
         for u in users:
-            if int(u["id"]) == int(v["closure_submitted_by"]):
-                closure_submitter = u["username"]
+            if int(u["id"]) == int(submitter_id):
+                resolution_submitter = u["username"]
                 break
     return render_template(
         "security/vulnerabilities/detail.html",
@@ -324,7 +319,8 @@ def detail(vuln_id: int):
         next_step=next_step,
         status_group=workflow.status_group(v.get("status")),
         technician_status_choices=workflow.TECHNICIAN_STATUS_CHOICES,
-        closure_submitter=closure_submitter,
+        resolution_status_choices=workflow.RESOLUTION_STATUS_CHOICES,
+        resolution_submitter=resolution_submitter,
         role=role,
         hide_sidebar=True,
     )
@@ -350,10 +346,12 @@ def action(vuln_id: int):
                 duplicate_of_id=int(request.form["duplicate_of"]) if request.form.get("duplicate_of") else None,
                 admin_override=role == "admin",
             )
-        elif act == "submit_closure":
-            workflow.submit_for_closure(
+        elif act == "submit_resolution":
+            workflow.submit_for_resolution(
                 vuln_id,
+                proposed_status=request.form.get("proposed_status") or "",
                 note=request.form.get("note") or "",
+                false_positive_reason=request.form.get("false_positive_reason") or "",
                 user=user,
                 role=role,
             )
@@ -421,13 +419,13 @@ def approve_risk(vuln_id: int):
     return redirect(url_for("vuln.detail", vuln_id=vuln_id))
 
 
-@bp.route("/<int:vuln_id>/approve-closure", methods=["POST"])
+@bp.route("/<int:vuln_id>/approve-resolution", methods=["POST"])
 @authz.require_auditor(PKG)
 @authz.module_enabled_required(PKG, MOD)
-def approve_closure(vuln_id: int):
+def approve_resolution(vuln_id: int):
     auth.verify_csrf()
     try:
-        workflow.decide_closure(
+        workflow.decide_resolution(
             vuln_id,
             approve=bool(request.form.get("approve")),
             note=request.form.get("note") or "",

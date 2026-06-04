@@ -61,7 +61,12 @@ CREATE TABLE IF NOT EXISTS vuln_workflow (
     risk_accept_decided_at  TEXT,
     risk_accept_decision_note TEXT,
     closure_submitted_by    INTEGER,
-    closure_submitted_at    TEXT
+    closure_submitted_at    TEXT,
+    proposed_status         TEXT,
+    previous_status         TEXT,
+    previous_assignee_user_id INTEGER,
+    resolution_submitted_by INTEGER,
+    resolution_submitted_at TEXT
 );
 CREATE TABLE IF NOT EXISTS vuln_comments (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,6 +137,28 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE vuln_workflow ADD COLUMN closure_submitted_by INTEGER")
     if "closure_submitted_at" not in wf_cols:
         conn.execute("ALTER TABLE vuln_workflow ADD COLUMN closure_submitted_at TEXT")
+    if "proposed_status" not in wf_cols:
+        conn.execute("ALTER TABLE vuln_workflow ADD COLUMN proposed_status TEXT")
+    if "previous_status" not in wf_cols:
+        conn.execute("ALTER TABLE vuln_workflow ADD COLUMN previous_status TEXT")
+    if "previous_assignee_user_id" not in wf_cols:
+        conn.execute("ALTER TABLE vuln_workflow ADD COLUMN previous_assignee_user_id INTEGER")
+    if "resolution_submitted_by" not in wf_cols:
+        conn.execute("ALTER TABLE vuln_workflow ADD COLUMN resolution_submitted_by INTEGER")
+    if "resolution_submitted_at" not in wf_cols:
+        conn.execute("ALTER TABLE vuln_workflow ADD COLUMN resolution_submitted_at TEXT")
+    conn.execute(
+        """
+        UPDATE vuln_workflow
+        SET status = 'pending_review',
+            proposed_status = COALESCE(proposed_status, 'closed'),
+            previous_status = COALESCE(previous_status, 'mitigated'),
+            previous_assignee_user_id = COALESCE(previous_assignee_user_id, assignee_user_id),
+            resolution_submitted_by = COALESCE(resolution_submitted_by, closure_submitted_by),
+            resolution_submitted_at = COALESCE(resolution_submitted_at, closure_submitted_at)
+        WHERE status = 'pending_closure'
+        """
+    )
     _backfill_identity_keys(conn)
 
 
@@ -343,7 +370,10 @@ def list_vulnerabilities(
     if kev_only:
         clauses.append("v.kev = 1")
     if overdue_only:
-        clauses.append("w.due_date IS NOT NULL AND w.due_date < ? AND w.status NOT IN ('closed','false_positive','wont_fix')")
+        clauses.append(
+            "w.due_date IS NOT NULL AND w.due_date < ? "
+            "AND w.status NOT IN ('mitigated','closed','false_positive','wont_fix','risk_accepted','duplicate','pending_review')"
+        )
         args.append(datetime.now(timezone.utc).date().isoformat())
     if risk_pending:
         clauses.append("w.risk_accept_state = 'requested'")
@@ -368,7 +398,9 @@ def list_vulnerabilities(
     }.get(sort, "v.updated_at DESC")
     sql = f"""
         SELECT v.*, w.status AS wf_status, w.assignee_user_id, w.due_date,
-               w.risk_accept_state, w.reopened_count, w.duplicate_of_id
+               w.risk_accept_state, w.reopened_count, w.duplicate_of_id,
+               w.proposed_status, w.previous_status, w.previous_assignee_user_id,
+               w.resolution_submitted_by, w.resolution_submitted_at
         FROM vulnerabilities v
         JOIN vuln_workflow w ON w.vuln_id = v.id
         {where}
@@ -580,6 +612,8 @@ def update_workflow(vuln_id: int, **fields) -> None:
         "risk_accept_requested_at", "risk_accept_decided_by",
         "risk_accept_decided_at", "risk_accept_decision_note",
         "closure_submitted_by", "closure_submitted_at",
+        "proposed_status", "previous_status", "previous_assignee_user_id",
+        "resolution_submitted_by", "resolution_submitted_at",
     }
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
@@ -791,7 +825,7 @@ def dashboard_stats() -> dict:
                 """
                 SELECT v.severity, COUNT(*) AS n FROM vulnerabilities v
                 JOIN vuln_workflow w ON w.vuln_id = v.id
-                WHERE w.status NOT IN ('closed','false_positive','wont_fix')
+                WHERE w.status IN ('open','triaged','in_progress')
                 GROUP BY v.severity
                 """
             )
@@ -805,27 +839,27 @@ def dashboard_stats() -> dict:
             """
             SELECT COUNT(*) FROM vuln_workflow w
             WHERE w.due_date IS NOT NULL AND w.due_date < ?
-            AND w.status NOT IN ('closed','false_positive','wont_fix','pending_closure','risk_accepted','duplicate')
+            AND w.status IN ('open','triaged','in_progress')
             """,
             (datetime.now(timezone.utc).date().isoformat(),),
         ).fetchone()[0]
         pending_ra = c.execute(
             "SELECT COUNT(*) FROM vuln_workflow WHERE risk_accept_state = 'requested'"
         ).fetchone()[0]
-        pending_closure = c.execute(
-            "SELECT COUNT(*) FROM vuln_workflow WHERE status = 'pending_closure'"
+        pending_review = c.execute(
+            "SELECT COUNT(*) FROM vuln_workflow WHERE status = 'pending_review'"
         ).fetchone()[0]
         kev_open = c.execute(
             """
             SELECT COUNT(*) FROM vulnerabilities v
             JOIN vuln_workflow w ON w.vuln_id = v.id
-            WHERE v.kev = 1 AND w.status NOT IN ('closed','false_positive','wont_fix')
+            WHERE v.kev = 1 AND w.status IN ('open','triaged','in_progress')
             """
         ).fetchone()[0]
         total_open = c.execute(
             """
             SELECT COUNT(*) FROM vuln_workflow
-            WHERE status NOT IN ('closed','false_positive','wont_fix')
+            WHERE status IN ('open','triaged','in_progress')
             """
         ).fetchone()[0]
     dup_db = count_duplicate_groups()
@@ -834,7 +868,8 @@ def dashboard_stats() -> dict:
         "by_status": {r["status"]: r["n"] for r in by_status},
         "overdue": overdue,
         "pending_risk_acceptance": pending_ra,
-        "pending_closure": pending_closure,
+        "pending_closure": pending_review,
+        "pending_review": pending_review,
         "kev_open": kev_open,
         "total_open": total_open,
         "duplicate_groups": dup_db,

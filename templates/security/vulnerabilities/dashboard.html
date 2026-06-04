@@ -38,10 +38,10 @@
       <p class="sec-kpi-label">KEV exposure</p>
       <p class="sec-kpi-value">{{ stats.kev_open }}</p>
     </article>
-    {% if stats.pending_closure and role in ('admin','auditor') %}
+    {% if stats.pending_review and role in ('admin','auditor') %}
     <article class="sec-kpi accent">
-      <p class="sec-kpi-label">Awaiting closure review</p>
-      <p class="sec-kpi-value">{{ stats.pending_closure }}</p>
+      <p class="sec-kpi-label">Awaiting final approval</p>
+      <p class="sec-kpi-value">{{ stats.pending_review }}</p>
       <a class="btn small" href="{{ url_for('vuln.findings_list', view='review') }}">Review queue</a>
     </article>
     {% endif %}
