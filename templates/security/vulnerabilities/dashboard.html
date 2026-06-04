@@ -61,6 +61,80 @@
     {% endif %}
   </div>
 
+  <section class="sec-panel sec-progress">
+    <div class="sec-panel-head">
+      <h2>Remediation progress</h2>
+      <span class="muted small">Last {{ work.days }} days — what the team has cleared</span>
+    </div>
+    <div class="sec-progress-grid">
+      <div class="sec-trend-tiles">
+        <article class="sec-trend-tile">
+          <p class="sec-kpi-label">Resolved</p>
+          <p class="sec-kpi-value">{{ work.resolved_30d }}</p>
+          {% if work.resolved_delta > 0 %}
+            <p class="sec-delta up">▲ {{ work.resolved_change_pct }}% vs prev. {{ work.days }}d</p>
+          {% elif work.resolved_delta < 0 %}
+            <p class="sec-delta down">▼ {{ work.resolved_change_pct|abs }}% vs prev. {{ work.days }}d</p>
+          {% else %}
+            <p class="sec-delta flat">No change vs prev. {{ work.days }}d</p>
+          {% endif %}
+        </article>
+        <article class="sec-trend-tile">
+          <p class="sec-kpi-label">Sent for approval</p>
+          <p class="sec-kpi-value">{{ work.submitted_30d }}</p>
+          <p class="muted small">outcomes proposed</p>
+        </article>
+        <article class="sec-trend-tile">
+          <p class="sec-kpi-label">Newly found</p>
+          <p class="sec-kpi-value">{{ work.found_30d }}</p>
+          {% if work.net_30d > 0 %}
+            <p class="sec-delta down">backlog +{{ work.net_30d }}</p>
+          {% elif work.net_30d < 0 %}
+            <p class="sec-delta up">backlog −{{ work.net_30d|abs }}</p>
+          {% else %}
+            <p class="sec-delta flat">net even</p>
+          {% endif %}
+        </article>
+      </div>
+
+      <div class="sec-week-chart-card">
+        <p class="sec-chart-title">Resolved per week <span class="muted">· {{ work.weekly_total }} in {{ work.weekly|length }} weeks</span></p>
+        {% if work.weekly_max %}
+        <div class="sec-week-chart">
+          {% for w in work.weekly %}
+            <div class="sec-week-col" title="{{ w.count }} resolved (week of {{ w.label }})">
+              <span class="sec-week-count">{{ w.count }}</span>
+              <div class="sec-week-bar"><div class="sec-week-bar-fill" style="height: {{ (100 * w.count / work.weekly_max)|round(0, 'ceil')|int }}%"></div></div>
+              <span class="sec-week-label">{{ w.label }}</span>
+            </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted small sec-week-empty">No findings resolved yet. Once outcomes are approved, your weekly progress shows up here.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if work.outcomes_30d %}
+    <div class="sec-outcomes">
+      <p class="sec-chart-title">How they were resolved <span class="muted">· last {{ work.days }} days</span></p>
+      {% set omax = work.outcomes_30d.values()|max %}
+      <ul class="sec-sev-bars sec-outcome-bars">
+        {% for key, label in [('mitigated','Mitigated'),('closed','Closed'),('wont_fix',"Won't fix"),('false_positive','False positive'),('risk_accepted','Risk accepted'),('duplicate','Duplicate')] %}
+          {% set n = work.outcomes_30d.get(key, 0) %}
+          {% if n %}
+          <li class="outcome-{{ key }}">
+            <span class="status-pill status-{{ key }}">{{ label }}</span>
+            <span class="sec-sev-bar-track"><span class="sec-sev-bar-fill" style="width: {{ (100 * n / omax)|int }}%"></span></span>
+            <strong>{{ n }}</strong>
+          </li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </section>
+
   <div class="sec-dash-main">
     <section class="sec-panel">
       <h2>Open by severity</h2>

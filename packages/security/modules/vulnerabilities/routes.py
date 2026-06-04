@@ -142,6 +142,7 @@ def dashboard():
     stats = db.dashboard_stats()
     by = stats.get("by_severity") or {}
     stats["severity_max"] = max(1, max(by.values()) if by else 1)
+    work = db.work_stats()
     last_sync = db.last_sync_run()
     recent = db.list_vulnerabilities(
         limit=12, sort="severity", statuses=list(workflow.ACTIVE_STATUSES)
@@ -152,6 +153,7 @@ def dashboard():
     return render_template(
         "security/vulnerabilities/dashboard.html",
         stats=stats,
+        work=work,
         last_sync=last_sync,
         recent=recent,
         user_map=user_map,

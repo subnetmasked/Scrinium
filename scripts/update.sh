@@ -5,11 +5,9 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-NO_CACHE=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --no-cache) NO_CACHE=1; shift ;;
-    *) echo "Usage: $0 [--no-cache]" >&2; exit 1 ;;
+    *) echo "Usage: $0" >&2; exit 1 ;;
   esac
 done
 
@@ -27,13 +25,16 @@ compose() {
 echo "Pulling latest changes..."
 git pull
 
-if [ -n "$NO_CACHE" ]; then
-  echo "Rebuilding without cache..."
-  compose build --no-cache scrinium
-  compose up -d --force-recreate
-else
-  compose up -d --build
-fi
+# Full clean cycle: stop, rebuild the app image from scratch, recreate
+# containers. Bind-mounted data in ./data is preserved throughout.
+echo "Stopping containers..."
+compose down
+
+echo "Rebuilding scrinium image without cache..."
+compose build --no-cache scrinium
+
+echo "Recreating containers..."
+compose up -d --force-recreate
 
 PORT="${SCRINIUM_HTTP_PORT:-8080}"
 if [ -f .env ]; then

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from packages.db import connect
@@ -873,6 +873,89 @@ def dashboard_stats() -> dict:
         "kev_open": kev_open,
         "total_open": total_open,
         "duplicate_groups": dup_db,
+    }
+
+
+def work_stats(days: int = 30, weeks: int = 8) -> dict:
+    """Remediation progress for the dashboard: what the team has resolved over
+    time, so technicians can see their impact.
+
+    "Resolved" means a finding left the active queue — an auditor-approved
+    outcome (mitigated/closed/won't fix/false positive) or a direct
+    risk-accepted/duplicate disposition.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff_30 = (now - timedelta(days=days)).isoformat()
+    cutoff_60 = (now - timedelta(days=2 * days)).isoformat()
+    chart_days = weeks * 7
+    cutoff_chart = (now - timedelta(days=chart_days - 1)).isoformat()
+    resolved_clause = (
+        "(action = 'vuln.resolution_approved' "
+        "OR (action = 'vuln.status_change' AND new_value IN ('risk_accepted','duplicate')))"
+    )
+    with connect(PKG) as c:
+        resolved_30 = c.execute(
+            f"SELECT COUNT(*) FROM vuln_events WHERE {resolved_clause} AND ts >= ?",
+            (cutoff_30,),
+        ).fetchone()[0]
+        resolved_prev = c.execute(
+            f"SELECT COUNT(*) FROM vuln_events WHERE {resolved_clause} AND ts >= ? AND ts < ?",
+            (cutoff_60, cutoff_30),
+        ).fetchone()[0]
+        submitted_30 = c.execute(
+            "SELECT COUNT(*) FROM vuln_events WHERE action = 'vuln.resolution_submitted' AND ts >= ?",
+            (cutoff_30,),
+        ).fetchone()[0]
+        found_30 = c.execute(
+            "SELECT COUNT(*) FROM vulnerabilities WHERE first_seen >= ?",
+            (cutoff_30,),
+        ).fetchone()[0]
+        day_rows = c.execute(
+            f"SELECT substr(ts,1,10) AS day, COUNT(*) AS n FROM vuln_events "
+            f"WHERE {resolved_clause} AND ts >= ? GROUP BY day",
+            (cutoff_chart,),
+        ).fetchall()
+        outcome_rows = c.execute(
+            f"SELECT new_value AS outcome, COUNT(*) AS n FROM vuln_events "
+            f"WHERE {resolved_clause} AND ts >= ? GROUP BY new_value",
+            (cutoff_30,),
+        ).fetchall()
+
+    day_counts = {r["day"]: r["n"] for r in day_rows}
+    today = now.date()
+    buckets = [0] * weeks
+    for offset in range(chart_days):
+        d = today - timedelta(days=offset)
+        b = offset // 7
+        if b < weeks:
+            buckets[b] += day_counts.get(d.isoformat(), 0)
+    weekly = []
+    for i in range(weeks - 1, -1, -1):  # oldest -> newest
+        start = today - timedelta(days=i * 7 + 6)
+        weekly.append({"label": f"{start.month}/{start.day}", "count": buckets[i]})
+    weekly_max = max((w["count"] for w in weekly), default=0)
+
+    delta = resolved_30 - resolved_prev
+    if resolved_prev > 0:
+        change_pct = round((delta / resolved_prev) * 100)
+    elif resolved_30 > 0:
+        change_pct = 100
+    else:
+        change_pct = 0
+
+    return {
+        "days": days,
+        "resolved_30d": resolved_30,
+        "resolved_prev_30d": resolved_prev,
+        "resolved_delta": delta,
+        "resolved_change_pct": change_pct,
+        "submitted_30d": submitted_30,
+        "found_30d": found_30,
+        "net_30d": found_30 - resolved_30,
+        "weekly": weekly,
+        "weekly_max": weekly_max,
+        "weekly_total": sum(w["count"] for w in weekly),
+        "outcomes_30d": {r["outcome"]: r["n"] for r in outcome_rows if r["outcome"]},
     }
 
 
