@@ -118,13 +118,6 @@ def submit_for_resolution(
     if proposed_status in ("mitigated", "closed"):
         if db.evidence_count(vuln_id) < 1:
             raise WorkflowError("Attach at least one evidence file before submitting this outcome.")
-        if not explanation:
-            raise WorkflowError("Add a summary describing what was remediated.")
-    elif proposed_status == "wont_fix":
-        if not explanation:
-            raise WorkflowError("Won't fix requires a reason.")
-    elif proposed_status == "false_positive" and not (fp_reason or explanation):
-        raise WorkflowError("False positive requires a reason.")
     updates = {
         "status": "pending_review",
         "proposed_status": proposed_status,
@@ -133,9 +126,9 @@ def submit_for_resolution(
         "resolution_submitted_by": int(user["id"]),
         "resolution_submitted_at": datetime.now(timezone.utc).isoformat(),
     }
-    if proposed_status == "false_positive":
+    if proposed_status == "false_positive" and (fp_reason or explanation):
         updates["false_positive_reason"] = fp_reason or explanation
-    else:
+    elif explanation:
         updates["mitigation_note"] = explanation
     db.update_workflow(vuln_id, **updates)
     db.add_event(

@@ -147,8 +147,8 @@
 
       {% if can_work %}
       <div class="sec-side-card accent-border" data-card="submit-resolution">
-        <h3>Submit for final approval</h3>
-        <p class="muted small">When work is done, choose the final outcome and send it to an auditor. Mitigated/closed require evidence; won't-fix/false-positive require a reason.</p>
+        <h3>Final outcome</h3>
+        <p class="muted small">Choose the outcome and send it to an auditor. Mitigated/closed require evidence; no extra message is required to submit.</p>
         <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="submit_resolution">
@@ -158,10 +158,6 @@
                 <option value="{{ s }}">{{ s }}</option>
               {% endfor %}
             </select>
-          </label>
-          <label data-resolution-when="false_positive" hidden><span>False-positive reason</span><input name="false_positive_reason" value="{{ v.false_positive_reason or '' }}"></label>
-          <label><span>Explanation <em class="req-mark">required</em></span>
-            <textarea name="note" rows="3" required placeholder="Describe why this outcome is correct."></textarea>
           </label>
           <button class="btn primary" type="submit">Submit for auditor approval</button>
         </form>
@@ -332,22 +328,6 @@
       };
       sel.addEventListener('change', sync);
       sync();
-    }
-
-    // Final-approval form: reveal false-positive reason only when needed
-    const resSel = document.querySelector('[data-resolution-select]');
-    if (resSel) {
-      const form = resSel.closest('form');
-      const syncResolution = () => {
-        form.querySelectorAll('[data-resolution-when]').forEach((el) => {
-          const match = el.dataset.resolutionWhen === resSel.value;
-          el.hidden = !match;
-          const input = el.querySelector('input, textarea, select');
-          if (input) input.required = match;
-        });
-      };
-      resSel.addEventListener('change', syncResolution);
-      syncResolution();
     }
 
     // Next-step: jump to and highlight the relevant card
