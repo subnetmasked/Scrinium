@@ -49,7 +49,8 @@
         {% for u in users %}
           <tr>
             <td>
-              <strong>{{ u.username }}</strong>
+              <strong>{{ display_name(u) }}</strong>
+              {% if u.source == 'ldap' and display_name(u) != u.username %}<span class="muted small">({{ u.username }})</span>{% endif %}
               {% if me and u.id == me.id %}<span class="muted">(you)</span>{% endif %}
             </td>
             <td><span class="badge {{ u.source }}">{{ u.source }}</span></td>

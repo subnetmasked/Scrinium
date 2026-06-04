@@ -71,6 +71,21 @@
 
       <div class="form-row">
         <label>
+          <span>First name attribute</span>
+          <input name="attr_first_name" value="{{ s.attr_first_name }}"
+                 placeholder="givenName"
+                 spellcheck="false">
+        </label>
+        <label>
+          <span>Last name attribute</span>
+          <input name="attr_last_name" value="{{ s.attr_last_name }}"
+                 placeholder="sn"
+                 spellcheck="false">
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>
           <span>Connect timeout (seconds)</span>
           <input name="connect_timeout" type="number" min="1" max="60"
                  value="{{ s.connect_timeout }}">

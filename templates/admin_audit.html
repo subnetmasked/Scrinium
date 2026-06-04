@@ -28,7 +28,7 @@
         {% for r in rows %}
           <tr>
             <td class="small">{{ (r.ts or '')[:19].replace('T', ' ') }}</td>
-            <td>{{ r.actor or 'system' }}</td>
+            <td>{% if r.actor_id %}{{ label_for_id(r.actor_id) }}{% else %}{{ label_for_username(r.actor or 'system') }}{% endif %}</td>
             <td class="small">{{ r.ip or '—' }}</td>
             <td><code>{{ r.action }}</code></td>
             <td class="small">{{ r.target or '—' }}</td>

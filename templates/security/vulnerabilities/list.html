@@ -62,7 +62,10 @@
     </form>
   </section>
 
-  {% if role in ('admin','technician') %}
+  {% set can_select = role in ('admin','technician') or (role in ('admin','auditor') and view == 'review') %}
+  {% set bulk_form_id = 'bulk-approve-form' if view == 'review' and role in ('admin','auditor') else 'bulk-form' %}
+
+  {% if role in ('admin','technician') and view != 'review' %}
   <form id="bulk-form" method="post" action="{{ url_for('vuln.bulk') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="sec-bulk-bar">
@@ -73,21 +76,62 @@
       </select>
       <select name="assignee_id">
         <option value="">Unassigned</option>
-        {% for u in users %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+        {% for u in users %}<option value="{{ u.id }}">{{ display_name(u) }}</option>{% endfor %}
       </select>
       <select name="status">
         <option value="triaged">triaged</option>
         <option value="in_progress">in_progress</option>
       </select>
       <button class="btn" type="submit">Apply to selected</button>
+      <button class="btn primary" type="button" id="bulk-close-open">Bulk close…</button>
     </div>
+  </form>
   {% endif %}
+
+  {% if role in ('admin','auditor') and view == 'review' %}
+  <form id="bulk-approve-form" method="post" action="{{ url_for('vuln.bulk_approve_resolution') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="sec-bulk-bar sec-bulk-bar-review">
+      <strong class="small">Bulk approval</strong>
+      <label class="small"><span class="muted">Decision note</span>
+        <input name="note" type="text" placeholder="Optional note for all approvals">
+      </label>
+      <button class="btn primary" type="submit">Approve selected</button>
+    </div>
+  </form>
+  {% endif %}
+
+  <dialog id="bulk-close-dialog" class="sec-modal">
+    <form id="bulk-close-form" method="post" action="{{ url_for('vuln.bulk_close') }}" enctype="multipart/form-data" class="sec-form-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h3>Bulk close</h3>
+      <p class="muted small">The same note and evidence files are attached to each selected finding and submitted for auditor approval. A bulk-action disclaimer is appended to the note on every finding.</p>
+      <div id="bulk-close-ids"></div>
+      <label><span>Closure status</span>
+        <select name="status" required>
+          {% for s in resolution_status_choices %}
+            <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label><span>Closure note <em class="req-mark">required</em></span>
+        <textarea name="note" rows="4" required placeholder="Explain why these findings share the same resolution…"></textarea>
+      </label>
+      <label><span>Evidence <em class="req-mark">required for mitigated/closed</em></span>
+        <input type="file" name="file" multiple>
+      </label>
+      <div class="sec-modal-actions">
+        <button class="btn primary" type="submit">Submit all for approval</button>
+        <button class="btn" type="button" id="bulk-close-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <div class="sec-table-wrap">
     <table class="sec-findings-table">
       <thead>
         <tr>
-          {% if role in ('admin','technician') %}<th style="width:2rem"><input type="checkbox" id="select-all" title="Select all"></th>{% endif %}
+          {% if can_select %}<th style="width:2rem"><input type="checkbox" id="select-all" title="Select all"></th>{% endif %}
           <th>Severity</th>
           <th>Finding</th>
           <th>Asset</th>
@@ -101,8 +145,8 @@
       <tbody>
         {% for r in rows %}
           <tr>
-            {% if role in ('admin','technician') %}
-              <td><input type="checkbox" name="vuln_id" value="{{ r.id }}" form="bulk-form"></td>
+            {% if can_select %}
+              <td><input type="checkbox" class="vuln-select" name="vuln_id" value="{{ r.id }}" form="{{ bulk_form_id }}"></td>
             {% endif %}
             <td>
               <span class="sev-badge sev-{{ r.severity }}">{{ r.severity }}</span>
@@ -131,15 +175,44 @@
       </tbody>
     </table>
   </div>
-  {% if role in ('admin','technician') %}</form>{% endif %}
-
   <script>
   (function () {
     const all = document.getElementById('select-all');
-    if (!all) return;
-    all.addEventListener('change', () => {
-      document.querySelectorAll('[name=vuln_id]').forEach((cb) => { cb.checked = all.checked; });
-    });
+    if (all) {
+      all.addEventListener('change', () => {
+        document.querySelectorAll('.vuln-select').forEach((cb) => { cb.checked = all.checked; });
+      });
+    }
+    const dialog = document.getElementById('bulk-close-dialog');
+    const openBtn = document.getElementById('bulk-close-open');
+    const cancelBtn = document.getElementById('bulk-close-cancel');
+    const closeForm = document.getElementById('bulk-close-form');
+    const idsHost = document.getElementById('bulk-close-ids');
+    if (openBtn && dialog && closeForm && idsHost) {
+      openBtn.addEventListener('click', () => {
+        const checked = [...document.querySelectorAll('.vuln-select:checked')];
+        if (!checked.length) {
+          alert('Select at least one finding.');
+          return;
+        }
+        idsHost.innerHTML = '';
+        checked.forEach((cb) => {
+          const inp = document.createElement('input');
+          inp.type = 'hidden';
+          inp.name = 'vuln_id';
+          inp.value = cb.value;
+          idsHost.appendChild(inp);
+        });
+        if (typeof dialog.showModal === 'function') dialog.showModal();
+        else dialog.setAttribute('open', '');
+      });
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+          if (typeof dialog.close === 'function') dialog.close();
+          else dialog.removeAttribute('open');
+        });
+      }
+    }
   })();
   </script>
 {% endblock %}

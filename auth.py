@@ -105,6 +105,10 @@ def migrate_db(conn: sqlite3.Connection) -> None:
             "ALTER TABLE users ADD COLUMN sidebar_default TEXT NOT NULL "
             "DEFAULT 'expanded'"
         )
+    if "first_name" not in have:
+        conn.execute("ALTER TABLE users ADD COLUMN first_name TEXT")
+    if "last_name" not in have:
+        conn.execute("ALTER TABLE users ADD COLUMN last_name TEXT")
 
 
 @contextmanager
@@ -156,16 +160,44 @@ def create_user(
     *,
     is_admin: bool = False,
     source: str = "local",
+    first_name: str | None = None,
+    last_name: str | None = None,
 ) -> int:
     pw_hash = generate_password_hash(password) if password else None
     now = datetime.now(timezone.utc).isoformat()
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO users (username, password_hash, is_admin, source, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (username.strip(), pw_hash, 1 if is_admin else 0, source, now),
+            "INSERT INTO users (username, password_hash, is_admin, source, created_at, "
+            "first_name, last_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                username.strip(),
+                pw_hash,
+                1 if is_admin else 0,
+                source,
+                now,
+                (first_name or "").strip() or None,
+                (last_name or "").strip() or None,
+            ),
         )
         return cur.lastrowid
+
+
+def update_user_names(
+    user_id: int,
+    *,
+    first_name: str | None = None,
+    last_name: str | None = None,
+) -> None:
+    """Refresh LDAP given name / surname on the user row."""
+    with _conn() as c:
+        c.execute(
+            "UPDATE users SET first_name = ?, last_name = ? WHERE id = ?",
+            (
+                (first_name or "").strip() or None,
+                (last_name or "").strip() or None,
+                user_id,
+            ),
+        )
 
 
 def set_password(user_id: int, password: str) -> None:
@@ -185,6 +217,7 @@ def set_admin(user_id: int, is_admin: bool) -> None:
 def delete_user(user_id: int) -> None:
     with _conn() as c:
         c.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    invalidate_user_label_cache()
 
 
 def touch_login(user_id: int) -> None:
@@ -270,6 +303,8 @@ LDAP_DEFAULTS: dict = {
     "bind_password": "",
     "user_base_dn": "",
     "user_filter": "(uid={username})",
+    "attr_first_name": "givenName",
+    "attr_last_name": "sn",
     "use_starttls": False,
     "verify_cert": True,
     "auto_provision": True,
@@ -587,6 +622,78 @@ def save_ldap_settings(form: dict, *, keep_existing_password: bool = True) -> No
     set_config("ldap", cleaned)
 
 
+def display_name(user: sqlite3.Row | dict | None) -> str:
+    """Human-readable label: LDAP first+last when available, else username."""
+    if user is None:
+        return ""
+    source = user["source"] if "source" in user.keys() else user.get("source", "local")
+    first = (user["first_name"] if "first_name" in user.keys() else user.get("first_name")) or ""
+    last = (user["last_name"] if "last_name" in user.keys() else user.get("last_name")) or ""
+    first = str(first).strip()
+    last = str(last).strip()
+    if source == "ldap" and (first or last):
+        return f"{first} {last}".strip()
+    username = user["username"] if "username" in user.keys() else user.get("username", "")
+    return str(username or "")
+
+
+_user_label_cache: dict[str, tuple[float, dict]] = {}
+_USER_LABEL_CACHE_TTL = 30.0
+
+
+def _user_label_maps() -> tuple[dict[int, str], dict[str, str]]:
+    """Cached id->label and username->label maps for templates and audit resolution."""
+    now = time.time()
+    cached = _user_label_cache.get("maps")
+    if cached and now - cached[0] < _USER_LABEL_CACHE_TTL:
+        return cached[1], cached[2]
+    by_id: dict[int, str] = {}
+    by_username: dict[str, str] = {}
+    for u in list_users():
+        label = display_name(u)
+        by_id[int(u["id"])] = label
+        by_username[str(u["username"]).lower()] = label
+    _user_label_cache["maps"] = (now, by_id, by_username)
+    return by_id, by_username
+
+
+def invalidate_user_label_cache() -> None:
+    _user_label_cache.clear()
+
+
+def label_for_id(user_id: int | None) -> str:
+    if user_id is None:
+        return ""
+    by_id, _ = _user_label_maps()
+    return by_id.get(int(user_id), f"user #{user_id}")
+
+
+def label_for_username(username: str | None) -> str:
+    if not username or username == "system":
+        return username or ""
+    _, by_username = _user_label_maps()
+    return by_username.get(str(username).lower(), str(username))
+
+
+def _ldap_attr_value(entry: object, attr: str) -> str:
+    """Read a single string value from an ldap3 entry attribute."""
+    if not attr:
+        return ""
+    try:
+        val = entry[attr]  # type: ignore[index]
+    except (KeyError, TypeError):
+        return ""
+    if val is None:
+        return ""
+    if hasattr(val, "value"):
+        raw = val.value
+    elif isinstance(val, (list, tuple)) and val:
+        raw = val[0]
+    else:
+        raw = val
+    return str(raw).strip() if raw is not None else ""
+
+
 def _ldap_escape(value: str) -> str:
     """RFC 4515 escape for LDAP search filter values."""
     return (
@@ -706,8 +813,14 @@ def ldap_authenticate(username: str, password: str) -> Optional[dict]:
             return None
         flt = settings.get("user_filter") or "(uid={username})"
         flt = flt.replace("{username}", _ldap_escape(username))
+        attr_first = (settings.get("attr_first_name") or "givenName").strip()
+        attr_last = (settings.get("attr_last_name") or "sn").strip()
+        search_attrs = ["cn"]
+        for a in (attr_first, attr_last):
+            if a and a not in search_attrs:
+                search_attrs.append(a)
         current_app.logger.debug("LDAP: searching base=%r filter=%r", settings.get("user_base_dn"), flt)
-        conn.search(settings.get("user_base_dn") or "", flt, attributes=["cn"])
+        conn.search(settings.get("user_base_dn") or "", flt, attributes=search_attrs)
         if not conn.entries:
             current_app.logger.error(
                 "LDAP: user %r not found (base=%r filter=%r)",
@@ -715,7 +828,10 @@ def ldap_authenticate(username: str, password: str) -> Optional[dict]:
             )
             conn.unbind()
             return None
-        user_dn = conn.entries[0].entry_dn
+        entry = conn.entries[0]
+        user_dn = entry.entry_dn
+        first_name = _ldap_attr_value(entry, attr_first)
+        last_name = _ldap_attr_value(entry, attr_last)
         current_app.logger.debug("LDAP: found user DN %r, attempting user bind", user_dn)
         conn.unbind()
 
@@ -733,7 +849,12 @@ def ldap_authenticate(username: str, password: str) -> Optional[dict]:
                 "LDAP: user bind failed for DN %r (result: %s)", user_dn, user_conn.result
             )
             return None
-        return {"username": username, "dn": user_dn}
+        return {
+            "username": username,
+            "dn": user_dn,
+            "first_name": first_name,
+            "last_name": last_name,
+        }
     except LDAPException as e:
         current_app.logger.error("LDAP authentication error: %s", e)
         return None
@@ -745,6 +866,15 @@ def ldap_authenticate(username: str, password: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 # login flow
 # ---------------------------------------------------------------------------
+
+
+def _apply_ldap_profile(user_id: int, ldap_info: dict) -> None:
+    update_user_names(
+        user_id,
+        first_name=ldap_info.get("first_name"),
+        last_name=ldap_info.get("last_name"),
+    )
+    invalidate_user_label_cache()
 
 
 def authenticate(username: str, password: str) -> Optional[sqlite3.Row]:
@@ -761,13 +891,24 @@ def authenticate(username: str, password: str) -> Optional[sqlite3.Row]:
                 return user
             return None
         if user["source"] == "ldap":
-            if ldap_authenticate(username, password):
-                return user
+            ldap_info = ldap_authenticate(username, password)
+            if ldap_info:
+                _apply_ldap_profile(int(user["id"]), ldap_info)
+                return get_user(int(user["id"]))
             return None
     settings = ldap_settings()
     if settings.get("enabled") and settings.get("auto_provision", True):
-        if ldap_authenticate(username, password):
-            uid = create_user(username, None, is_admin=False, source="ldap")
+        ldap_info = ldap_authenticate(username, password)
+        if ldap_info:
+            uid = create_user(
+                username,
+                None,
+                is_admin=False,
+                source="ldap",
+                first_name=ldap_info.get("first_name"),
+                last_name=ldap_info.get("last_name"),
+            )
+            invalidate_user_label_cache()
             return get_user(uid)
     return None
 

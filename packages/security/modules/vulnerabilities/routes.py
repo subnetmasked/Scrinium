@@ -50,6 +50,58 @@ def _max_upload_bytes() -> int:
     return mb * 1024 * 1024
 
 
+def _read_upload_payloads() -> list[tuple[str, bytes, str]]:
+    """Read all uploaded files once so they can be attached to multiple findings."""
+    payloads: list[tuple[str, bytes, str]] = []
+    max_bytes = _max_upload_bytes()
+    for f in request.files.getlist("file"):
+        if not f or not f.filename:
+            continue
+        fn = secure_filename(f.filename)
+        if not fn:
+            continue
+        data = f.read()
+        if len(data) > max_bytes:
+            raise workflow.WorkflowError(f"File too large: {fn}")
+        mime = f.mimetype or mimetypes.guess_type(fn)[0] or "application/octet-stream"
+        payloads.append((fn, data, mime))
+    return payloads
+
+
+def _attach_evidence_payloads(
+    vuln_id: int,
+    payloads: list[tuple[str, bytes, str]],
+    *,
+    user_id: int,
+    note: str = "",
+) -> None:
+    dest_dir = _evidence_root() / str(vuln_id)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for fn, data, mime in payloads:
+        dest = dest_dir / fn
+        if dest.exists():
+            stem = Path(fn).stem
+            ext = Path(fn).suffix
+            for n in range(2, 100):
+                alt = f"{stem}_{n}{ext}"
+                candidate = dest_dir / alt
+                if not candidate.exists():
+                    fn = alt
+                    dest = candidate
+                    break
+        dest.write_bytes(data)
+        rel = str(dest.relative_to(_config_dir()))
+        db.add_evidence(vuln_id, fn, rel, mime, len(data), user_id, note=note)
+
+
+def _bulk_close_disclaimer(vuln_ids: list[int]) -> str:
+    labels = ", ".join(f"#{i}" for i in sorted(vuln_ids))
+    return (
+        f"\n\n— Closed via bulk action together with findings {labels} "
+        "(shared problem/solution/evidence)."
+    )
+
+
 _TERMINAL = {"mitigated", "closed", "false_positive", "wont_fix", "duplicate"}
 
 
@@ -148,7 +200,7 @@ def dashboard():
         limit=12, sort="severity", statuses=list(workflow.ACTIVE_STATUSES)
     )
     users = auth.list_users()
-    user_map = {int(u["id"]): u["username"] for u in users}
+    user_map = {int(u["id"]): auth.display_name(u) for u in users}
     user = auth.current_user()
     return render_template(
         "security/vulnerabilities/dashboard.html",
@@ -239,7 +291,7 @@ def findings_list():
         sort=request.args.get("sort") or "severity",
     )
     users = auth.list_users()
-    user_map = {int(u["id"]): u["username"] for u in users}
+    user_map = {int(u["id"]): auth.display_name(u) for u in users}
     return render_template(
         "security/vulnerabilities/list.html",
         rows=rows,
@@ -250,6 +302,7 @@ def findings_list():
         role=role,
         view=view,
         filters=request.args,
+        resolution_status_choices=workflow.RESOLUTION_STATUS_CHOICES,
         hide_sidebar=True,
     )
 
@@ -283,12 +336,11 @@ def detail(vuln_id: int):
     events = db.list_events(vuln_id)
     evidence = db.list_evidence(vuln_id)
     users = auth.list_users()
-    assignee_name = None
-    if v.get("assignee_user_id"):
-        for u in users:
-            if int(u["id"]) == int(v["assignee_user_id"]):
-                assignee_name = u["username"]
-                break
+    assignee_name = (
+        auth.label_for_id(int(v["assignee_user_id"]))
+        if v.get("assignee_user_id")
+        else None
+    )
     refs_raw = v.get("refs_json") or "[]"
     try:
         refs = json.loads(refs_raw) if isinstance(refs_raw, str) else (refs_raw or [])
@@ -300,13 +352,10 @@ def detail(vuln_id: int):
         refs=refs,
     )
     next_step = _next_step(v, role, len(evidence))
-    resolution_submitter = None
     submitter_id = v.get("resolution_submitted_by") or v.get("closure_submitted_by")
-    if submitter_id:
-        for u in users:
-            if int(u["id"]) == int(submitter_id):
-                resolution_submitter = u["username"]
-                break
+    resolution_submitter = (
+        auth.label_for_id(int(submitter_id)) if submitter_id else None
+    )
     return render_template(
         "security/vulnerabilities/detail.html",
         v=v,
@@ -450,6 +499,119 @@ def approve_resolution(vuln_id: int):
     except workflow.WorkflowError as e:
         return redirect(url_for("vuln.detail", vuln_id=vuln_id, error=str(e)))
     return redirect(url_for("vuln.detail", vuln_id=vuln_id))
+
+
+@bp.route("/bulk-close", methods=["POST"])
+@authz.require_technician(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def bulk_close():
+    auth.verify_csrf()
+    role = _role()
+    user = auth.current_user()
+    ids: list[int] = []
+    for sid in request.form.getlist("vuln_id"):
+        try:
+            ids.append(int(sid))
+        except ValueError:
+            continue
+    if not ids:
+        return redirect(url_for("vuln.findings_list", error="Select at least one finding."))
+    proposed = (request.form.get("status") or "").strip()
+    note = (request.form.get("note") or "").strip()
+    if proposed not in workflow.FINAL_APPROVAL_STATUSES:
+        return redirect(url_for("vuln.findings_list", error="Choose a valid closure status."))
+    if not note:
+        return redirect(url_for("vuln.findings_list", error="A closure note is required."))
+    try:
+        payloads = _read_upload_payloads()
+    except workflow.WorkflowError as e:
+        return redirect(url_for("vuln.findings_list", error=str(e)))
+    if proposed in ("mitigated", "closed") and not payloads:
+        return redirect(
+            url_for(
+                "vuln.findings_list",
+                error="Mitigated/closed bulk close requires at least one evidence file.",
+            )
+        )
+    full_note = note + _bulk_close_disclaimer(ids)
+    fp_reason = full_note if proposed == "false_positive" else ""
+    ok = 0
+    errors: list[str] = []
+    for vid in ids:
+        try:
+            if payloads:
+                _attach_evidence_payloads(
+                    vid, payloads, user_id=int(user["id"]), note="Bulk close evidence"
+                )
+            workflow.submit_for_resolution(
+                vid,
+                proposed_status=proposed,
+                note=full_note,
+                false_positive_reason=fp_reason,
+                user=user,
+                role=role,
+            )
+            ok += 1
+        except workflow.WorkflowError as e:
+            errors.append(f"#{vid}: {e}")
+    audit.record(
+        "vuln.bulk_close",
+        details={"status": proposed, "requested": len(ids), "ok": ok, "errors": errors},
+    )
+    if errors and ok:
+        msg = f"Submitted {ok} of {len(ids)} for approval. Failed: " + "; ".join(errors[:5])
+        return redirect(url_for("vuln.findings_list", error=msg))
+    if errors:
+        return redirect(
+            url_for("vuln.findings_list", error="; ".join(errors[:8]))
+        )
+    return redirect(
+        url_for(
+            "vuln.findings_list",
+            view="review" if role == "technician" else None,
+            notice=f"Submitted {ok} finding(s) for final approval.",
+        )
+    )
+
+
+@bp.route("/bulk-approve-resolution", methods=["POST"])
+@authz.require_auditor(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def bulk_approve_resolution():
+    auth.verify_csrf()
+    role = _role()
+    user = auth.current_user()
+    note = (request.form.get("note") or "").strip()
+    ids: list[int] = []
+    for sid in request.form.getlist("vuln_id"):
+        try:
+            ids.append(int(sid))
+        except ValueError:
+            continue
+    if not ids:
+        return redirect(url_for("vuln.findings_list", view="review", error="Select at least one finding."))
+    ok = 0
+    errors: list[str] = []
+    for vid in ids:
+        try:
+            workflow.decide_resolution(
+                vid, approve=True, note=note, user=user, role=role
+            )
+            ok += 1
+        except workflow.WorkflowError as e:
+            errors.append(f"#{vid}: {e}")
+    audit.record(
+        "vuln.bulk_approve_resolution",
+        details={"requested": len(ids), "ok": ok, "errors": errors},
+    )
+    if errors and ok:
+        msg = f"Approved {ok} of {len(ids)}. Failed: " + "; ".join(errors[:5])
+        return redirect(url_for("vuln.findings_list", view="review", error=msg))
+    if errors:
+        return redirect(url_for("vuln.findings_list", view="review", error="; ".join(errors[:8])))
+    return redirect(
+        url_for("vuln.findings_list", view="review", notice=f"Approved {ok} finding(s).")
+    )
 
 
 @bp.route("/bulk", methods=["POST"])

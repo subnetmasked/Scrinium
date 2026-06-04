@@ -15,7 +15,7 @@
           <tr>
             <td class="small">{{ (r.ts or '')[:19].replace('T',' ') }}</td>
             <td><a href="{{ url_for('vuln.detail', vuln_id=r.vuln_id) }}">#{{ r.vuln_id }}</a></td>
-            <td>{{ r.actor or '—' }}</td>
+            <td>{% if r.actor_id %}{{ label_for_id(r.actor_id) }}{% else %}{{ label_for_username(r.actor) if r.actor else '—' }}{% endif %}</td>
             <td><code>{{ r.action }}</code></td>
             <td class="small">
               {% if r.old_value or r.new_value %}{{ r.old_value }} → {{ r.new_value }}{% endif %}

@@ -4,7 +4,7 @@
     <ul>
       {% for e in recent_edits %}
         <li>
-          <strong>{{ e.actor or 'system' }}</strong>
+          <strong>{% if e.actor_id %}{{ label_for_id(e.actor_id) }}{% else %}{{ label_for_username(e.actor or 'system') }}{% endif %}</strong>
           <span class="muted">{{ e.action }}</span>
           <span class="muted">{{ e.ts }}</span>
         </li>

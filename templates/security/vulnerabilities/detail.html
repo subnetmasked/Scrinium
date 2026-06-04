@@ -101,7 +101,7 @@
           {% for e in events %}
             <li>
               <span class="muted small">{{ (e.ts or '')[:16].replace('T',' ') }}</span>
-              <strong>{{ e.action }}</strong> — {{ e.actor or 'system' }}
+              <strong>{{ e.action }}</strong> — {% if e.actor_id %}{{ label_for_id(e.actor_id) }}{% else %}{{ label_for_username(e.actor or 'system') }}{% endif %}
               {% if e.old_value or e.new_value %}<span class="small">({{ e.old_value }} → {{ e.new_value }})</span>{% endif %}
               {% if e.note %}<br><span class="small">{{ e.note }}</span>{% endif %}
             </li>
@@ -192,12 +192,20 @@
             <select name="assignee_id">
               <option value="">— Unassigned —</option>
               {% for u in users %}
-                <option value="{{ u.id }}" {% if v.assignee_user_id == u.id %}selected{% endif %}>{{ u.username }}</option>
+                <option value="{{ u.id }}" {% if v.assignee_user_id == u.id %}selected{% endif %}>{{ display_name(u) }}</option>
               {% endfor %}
             </select>
           </label>
           <button class="btn" type="submit">Save owner</button>
         </form>
+        {% if current_user and role in ('admin','technician') %}
+        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack" style="margin-top:0.5rem">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="assign">
+          <input type="hidden" name="assignee_id" value="{{ current_user.id }}">
+          <button class="btn" type="submit">Make me the owner</button>
+        </form>
+        {% endif %}
       </div>
 
       <details class="sec-side-card sec-more">
@@ -276,7 +284,7 @@
         <h3>Comments</h3>
         {% for c in comments %}
           <div class="sec-comment">
-            <strong>{{ c.author }}</strong>
+            <strong>{% if c.author_id %}{{ label_for_id(c.author_id) }}{% else %}{{ label_for_username(c.author) }}{% endif %}</strong>
             <span class="muted small">{{ (c.ts or '')[:16].replace('T',' ') }}</span>
             <p>{{ c.body }}</p>
           </div>

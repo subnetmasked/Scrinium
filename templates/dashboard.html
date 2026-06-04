@@ -5,7 +5,7 @@
     <div class="dash-hero-greeting">
       <h1>
         {% if current_user %}
-          Welcome back, {{ current_user.username }}.
+          Welcome back, {{ display_name(current_user) }}.
         {% else %}
           Welcome to {{ site_name }}.
         {% endif %}

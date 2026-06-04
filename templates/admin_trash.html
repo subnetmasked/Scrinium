@@ -17,7 +17,7 @@
           <tr>
             <td><code>{{ i.original_rel }}</code></td>
             <td>{{ i.kind }}</td>
-            <td>{{ i.deleted_by_name or '—' }}</td>
+            <td>{% if i.deleted_by %}{{ label_for_id(i.deleted_by) }}{% elif i.deleted_by_name %}{{ label_for_username(i.deleted_by_name) }}{% else %}—{% endif %}</td>
             <td class="small">{{ (i.deleted_at or '')[:19].replace('T', ' ') }}</td>
             <td class="small">{{ i.size_bytes }} B</td>
             <td class="row-actions">

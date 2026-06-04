@@ -41,7 +41,7 @@
           <label class="inline">
             <input type="checkbox" name="allowed_users[]" value="{{ u.username }}"
                    {% if u.is_admin %}checked disabled{% elif uname in allowed %}checked{% endif %}>
-            {{ u.username }}{% if u.is_admin %} <span class="muted small">(admin)</span>{% endif %}
+            {{ display_name(u) }}{% if u.is_admin %} <span class="muted small">(admin)</span>{% endif %}
           </label>
         {% endfor %}
       </div>
@@ -104,7 +104,7 @@
             <label class="inline">
               <input type="checkbox" name="allowed_users[]" value="{{ u.username }}"
                      {% if u.is_admin %}checked disabled{% endif %}>
-              {{ u.username }}{% if u.is_admin %} <span class="muted small">(admin)</span>{% endif %}
+              {{ display_name(u) }}{% if u.is_admin %} <span class="muted small">(admin)</span>{% endif %}
             </label>
           {% endfor %}
         </div>

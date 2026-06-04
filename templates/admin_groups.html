@@ -43,7 +43,7 @@
             <ul>
               {% for m in row.members %}
                 <li>
-                  {{ m.username }}
+                  {{ display_name(m) }}
                   <form method="post" action="{{ url_for('admin_groups') }}" class="inline-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="remove_member">
@@ -65,7 +65,7 @@
               <span>Add user</span>
               <select name="user_id">
                 {% for u in users %}
-                  <option value="{{ u.id }}">{{ u.username }}</option>
+                  <option value="{{ u.id }}">{{ display_name(u) }}</option>
                 {% endfor %}
               </select>
             </label>

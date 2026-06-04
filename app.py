@@ -506,6 +506,9 @@ def inject_globals():
         "site_appearance": appearance,
         "feature_flags": features,
         "font_css": auth.font_css_variables(appearance),
+        "display_name": auth.display_name,
+        "label_for_id": auth.label_for_id,
+        "label_for_username": auth.label_for_username,
     }
 
 
