@@ -18,7 +18,7 @@
       <div class="sec-search-results" role="listbox" hidden data-search-results></div>
     </form>
     <div class="sec-header-actions">
-      <a class="btn primary" href="{{ url_for('vuln.findings_list') }}">View all findings</a>
+      <a class="btn primary" href="{{ url_for('vuln.findings_list', view='all') }}">View all findings</a>
       {% if role in ('admin','technician') %}
         <a class="btn" href="{{ url_for('vuln.import_page') }}">Import</a>
       {% endif %}
@@ -38,6 +38,13 @@
       <p class="sec-kpi-label">KEV exposure</p>
       <p class="sec-kpi-value">{{ stats.kev_open }}</p>
     </article>
+    {% if stats.pending_closure and role in ('admin','auditor') %}
+    <article class="sec-kpi accent">
+      <p class="sec-kpi-label">Awaiting closure review</p>
+      <p class="sec-kpi-value">{{ stats.pending_closure }}</p>
+      <a class="btn small" href="{{ url_for('vuln.findings_list', view='review') }}">Review queue</a>
+    </article>
+    {% endif %}
     {% if stats.pending_risk_acceptance %}
     <article class="sec-kpi accent">
       <p class="sec-kpi-label">Pending risk acceptance</p>

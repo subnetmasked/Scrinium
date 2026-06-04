@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS vuln_workflow (
     risk_accept_requested_at TEXT,
     risk_accept_decided_by  INTEGER,
     risk_accept_decided_at  TEXT,
-    risk_accept_decision_note TEXT
+    risk_accept_decision_note TEXT,
+    closure_submitted_by    INTEGER,
+    closure_submitted_at    TEXT
 );
 CREATE TABLE IF NOT EXISTS vuln_comments (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,6 +127,11 @@ def migrate(conn: sqlite3.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_vuln_identity "
         "ON vulnerabilities (identity_key) WHERE identity_key IS NOT NULL"
     )
+    wf_cols = {r[1] for r in conn.execute("PRAGMA table_info(vuln_workflow)")}
+    if "closure_submitted_by" not in wf_cols:
+        conn.execute("ALTER TABLE vuln_workflow ADD COLUMN closure_submitted_by INTEGER")
+    if "closure_submitted_at" not in wf_cols:
+        conn.execute("ALTER TABLE vuln_workflow ADD COLUMN closure_submitted_at TEXT")
     _backfill_identity_keys(conn)
 
 
@@ -289,6 +296,7 @@ def row_to_dict(row: sqlite3.Row | None) -> Optional[dict]:
 def list_vulnerabilities(
     *,
     status: str | None = None,
+    statuses: list[str] | None = None,
     severity: str | None = None,
     assignee_id: int | None = None,
     owner_filter: str | None = None,
@@ -308,6 +316,10 @@ def list_vulnerabilities(
     if status:
         clauses.append("w.status = ?")
         args.append(status)
+    elif statuses:
+        placeholders = ",".join("?" for _ in statuses)
+        clauses.append(f"w.status IN ({placeholders})")
+        args.extend(statuses)
     if severity:
         clauses.append("v.severity = ?")
         args.append(severity)
@@ -567,6 +579,7 @@ def update_workflow(vuln_id: int, **fields) -> None:
         "risk_accept_reason", "risk_accept_until", "risk_accept_requested_by",
         "risk_accept_requested_at", "risk_accept_decided_by",
         "risk_accept_decided_at", "risk_accept_decision_note",
+        "closure_submitted_by", "closure_submitted_at",
     }
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
@@ -655,9 +668,20 @@ def set_tags(vuln_id: int, names: list[str]) -> None:
     with connect(PKG) as c:
         c.execute("DELETE FROM vuln_tag_map WHERE vuln_id = ?", (vuln_id,))
         for name in names:
-            if not name.strip():
+            cleaned = name.strip()
+            if not cleaned:
                 continue
-            tid = ensure_tag(name.strip())
+            # Resolve/insert the tag on the SAME connection — opening a nested
+            # connection here would deadlock against this write transaction.
+            row = c.execute(
+                "SELECT id FROM vuln_tags WHERE name = ? COLLATE NOCASE",
+                (cleaned,),
+            ).fetchone()
+            if row:
+                tid = int(row["id"])
+            else:
+                cur = c.execute("INSERT INTO vuln_tags (name) VALUES (?)", (cleaned,))
+                tid = int(cur.lastrowid)
             c.execute(
                 "INSERT OR IGNORE INTO vuln_tag_map (vuln_id, tag_id) VALUES (?, ?)",
                 (vuln_id, tid),
@@ -781,12 +805,15 @@ def dashboard_stats() -> dict:
             """
             SELECT COUNT(*) FROM vuln_workflow w
             WHERE w.due_date IS NOT NULL AND w.due_date < ?
-            AND w.status NOT IN ('closed','false_positive','wont_fix')
+            AND w.status NOT IN ('closed','false_positive','wont_fix','pending_closure','risk_accepted','duplicate')
             """,
             (datetime.now(timezone.utc).date().isoformat(),),
         ).fetchone()[0]
         pending_ra = c.execute(
             "SELECT COUNT(*) FROM vuln_workflow WHERE risk_accept_state = 'requested'"
+        ).fetchone()[0]
+        pending_closure = c.execute(
+            "SELECT COUNT(*) FROM vuln_workflow WHERE status = 'pending_closure'"
         ).fetchone()[0]
         kev_open = c.execute(
             """
@@ -807,6 +834,7 @@ def dashboard_stats() -> dict:
         "by_status": {r["status"]: r["n"] for r in by_status},
         "overdue": overdue,
         "pending_risk_acceptance": pending_ra,
+        "pending_closure": pending_closure,
         "kev_open": kev_open,
         "total_open": total_open,
         "duplicate_groups": dup_db,

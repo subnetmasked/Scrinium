@@ -5,8 +5,18 @@
   <p class="muted small">{{ rows|length }} result{% if rows|length != 1 %}s{% endif %} — filter, triage, and bulk-update assignments.</p>
 {% endblock %}
 {% block vuln_body %}
+  <div class="sec-view-tabs" role="tablist">
+    <a href="{{ url_for('vuln.findings_list') }}" class="sec-view-tab{% if view == 'active' %} active{% endif %}">Active work</a>
+    {% if role in ('admin','auditor') %}
+      <a href="{{ url_for('vuln.findings_list', view='review') }}" class="sec-view-tab{% if view == 'review' %} active{% endif %}">Awaiting closure</a>
+    {% endif %}
+    <a href="{{ url_for('vuln.findings_list', view='resolved') }}" class="sec-view-tab{% if view == 'resolved' %} active{% endif %}">Closed &amp; resolved</a>
+    <a href="{{ url_for('vuln.findings_list', view='all') }}" class="sec-view-tab{% if view == 'all' %} active{% endif %}">All</a>
+  </div>
+
   <section class="sec-filters">
     <form method="get" class="sec-filters-grid">
+      <input type="hidden" name="view" value="{{ view }}">
       <label><span>Search</span><input name="q" value="{{ filters.get('q','') }}" placeholder="Title, host, CVE, ID…"></label>
       <label><span>Status</span>
         <select name="status">

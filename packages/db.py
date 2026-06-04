@@ -36,7 +36,9 @@ def init_package_db(package_id: str) -> None:
     pkg = registry.get_package(package_id)
     if pkg is None:
         return
-    with sqlite3.connect(path) as conn:
+    with sqlite3.connect(path, timeout=15) as conn:
+        conn.execute("PRAGMA busy_timeout = 15000")
+        conn.execute("PRAGMA journal_mode = WAL")
         for mod in pkg.modules:
             mod.migrate(conn)
         conn.commit()
@@ -51,8 +53,14 @@ def init_all_package_dbs() -> None:
 def connect(package_id: str) -> Generator[sqlite3.Connection, None, None]:
     path = db_path(package_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    # WAL + a generous busy timeout let the request handlers and the background
+    # sync thread write to the same package DB without tripping "database is
+    # locked" under normal concurrency.
+    conn = sqlite3.connect(path, timeout=15)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
     try:
         yield conn
         conn.commit()

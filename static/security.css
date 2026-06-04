@@ -271,8 +271,14 @@
 .status-in_progress { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .status-closed,
 .status-mitigated { color: var(--success, #3fb950); }
+.status-pending_closure {
+  color: var(--warning, #d29922);
+  border-color: color-mix(in srgb, var(--warning, #d29922) 45%, var(--border));
+}
+.status-risk_accepted { color: var(--warning, #d29922); }
 .status-false_positive,
-.status-wont_fix { color: var(--text-muted); }
+.status-wont_fix,
+.status-duplicate { color: var(--text-muted); }
 
 .tag-chip {
   text-transform: none;
@@ -922,4 +928,32 @@
 .owner-none {
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* ---------- Findings view tabs ---------- */
+
+.sec-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.sec-view-tab {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: -1px;
+}
+.sec-view-tab:hover { color: var(--text); background: var(--bg-elev-2); }
+.sec-view-tab.active {
+  color: var(--accent);
+  border-color: var(--border);
+  border-bottom-color: var(--bg);
+  background: var(--bg-elev-2);
 }

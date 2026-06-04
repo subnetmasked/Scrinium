@@ -22,7 +22,7 @@
       {% if v.risk_accept_state == 'requested' %}<span class="pending-badge has-tip" tabindex="0"
             data-tip="A technician has requested to formally accept this risk; an auditor must decide.">Risk acceptance pending</span>{% endif %}
     </div>
-    <p class="muted small"><a href="{{ url_for('vuln.findings_list') }}">← All findings</a></p>
+    <p class="muted small"><a href="{{ url_for('vuln.findings_list', view='all') }}">← All findings</a></p>
   </div>
 
   <div class="sec-detail-layout">
@@ -120,7 +120,43 @@
         {% if next_step.focus %}<button type="button" class="sec-next-step-jump" data-jump="{{ next_step.focus }}">Take me there</button>{% endif %}
       </div>
 
-      {% if role in ('admin','technician') %}
+      {% set can_work = role in ('admin','technician') and (status_group == 'active' or role == 'admin') %}
+
+      {% if status == 'pending_closure' and role in ('admin','auditor') %}
+      <div class="sec-side-card accent-border" data-card="approve-closure">
+        <h3>Closure review</h3>
+        <p class="muted small">Submitted{% if closure_submitter %} by {{ closure_submitter }}{% endif %}{% if v.closure_submitted_at %} · {{ (v.closure_submitted_at or '')[:10] }}{% endif %}. Verify the evidence below, then approve or send it back.</p>
+        {% if v.mitigation_note %}<p class="small sec-prose">{{ v.mitigation_note }}</p>{% endif %}
+        <form method="post" action="{{ url_for('vuln.approve_closure', vuln_id=v.id) }}" class="sec-form-stack">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label><span>Decision note</span><textarea name="note" rows="2" placeholder="Required when sending back."></textarea></label>
+          <button class="btn primary" name="approve" value="1" type="submit">Approve &amp; close</button>
+          <button class="btn" name="approve" value="" type="submit">Send back to technician</button>
+        </form>
+      </div>
+      {% elif status == 'pending_closure' and role == 'technician' %}
+      <div class="sec-side-card" data-card="awaiting">
+        <h3>Awaiting closure sign-off</h3>
+        <p class="muted small">You submitted this finding for closure. An auditor must review the evidence and approve it before it closes.</p>
+      </div>
+      {% endif %}
+
+      {% if role in ('admin','technician') and status == 'mitigated' %}
+      <div class="sec-side-card accent-border" data-card="submit-closure">
+        <h3>Submit for closure</h3>
+        <p class="muted small">Remediation done? Send it to an auditor to verify and close. Requires evidence attached below.</p>
+        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="submit_closure">
+          <label><span>Closure summary <em class="req-mark">required</em></span>
+            <textarea name="note" rows="3" required placeholder="Describe what was done to remediate this finding."></textarea>
+          </label>
+          <button class="btn primary" type="submit">Submit for closure review</button>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if can_work %}
       <div class="sec-side-card" data-card="status">
         <h3>Update status</h3>
         <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack" data-status-form>
@@ -128,7 +164,7 @@
           <input type="hidden" name="action" value="status">
           <label><span>Status</span>
             <select name="status" data-status-select>
-              {% for s in ['open','triaged','in_progress','mitigated','closed','false_positive','wont_fix','duplicate'] %}
+              {% for s in technician_status_choices %}
                 <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s }}</option>
               {% endfor %}
             </select>
@@ -221,7 +257,7 @@
             <li class="muted">No evidence uploaded.</li>
           {% endfor %}
         </ul>
-        {% if role in ('admin','technician') %}
+        {% if can_work %}
         <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" enctype="multipart/form-data" class="sec-form-stack">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="evidence">

@@ -59,6 +59,19 @@ def _next_step(v: dict, role: str, evidence_count: int) -> dict:
     ra = v.get("risk_accept_state") or "none"
     has_assignee = bool(v.get("assignee_user_id"))
 
+    if status == "pending_closure":
+        if role in ("admin", "auditor"):
+            return {
+                "tone": "review",
+                "title": "Review the completed remediation",
+                "detail": "A technician submitted this finding for closure. Verify the evidence and approve, or send it back.",
+                "focus": "approve-closure",
+            }
+        return {
+            "tone": "wait",
+            "title": "Waiting for auditor sign-off",
+            "detail": "You submitted this for closure. An auditor or admin must review the evidence and approve it.",
+        }
     if ra == "requested":
         if role in ("admin", "auditor"):
             return {
@@ -90,14 +103,14 @@ def _next_step(v: dict, role: str, evidence_count: int) -> dict:
             return {
                 "tone": "action",
                 "title": "Upload evidence of the fix",
-                "detail": "Attach proof (scan result, screenshot, ticket) before this finding can be closed.",
+                "detail": "Attach proof (scan result, screenshot, ticket) before this finding can be submitted for closure.",
                 "focus": "evidence",
             }
         return {
             "tone": "action",
-            "title": "Close the finding",
-            "detail": "Evidence is attached. Set status to Closed and add a closure note.",
-            "focus": "status",
+            "title": "Submit for closure review",
+            "detail": "Evidence is attached. Submit the finding so an auditor can verify the work and close it.",
+            "focus": "submit-closure",
         }
     if not has_assignee:
         return {
@@ -143,7 +156,9 @@ def dashboard():
     by = stats.get("by_severity") or {}
     stats["severity_max"] = max(1, max(by.values()) if by else 1)
     last_sync = db.last_sync_run()
-    recent = db.list_vulnerabilities(limit=12, sort="severity")
+    recent = db.list_vulnerabilities(
+        limit=12, sort="severity", statuses=list(workflow.ACTIVE_STATUSES)
+    )
     users = auth.list_users()
     user_map = {int(u["id"]): u["username"] for u in users}
     user = auth.current_user()
@@ -192,14 +207,29 @@ def api_search():
     )
 
 
+_STATUS_VIEWS = {
+    "active": list(workflow.ACTIVE_STATUSES),
+    "review": list(workflow.REVIEW_STATUSES),
+    "resolved": list(workflow.RESOLVED_STATUSES),
+}
+
+
 @bp.route("/findings")
 @authz.package_login_required(PKG)
 @authz.module_enabled_required(PKG, MOD)
 def findings_list():
     role = _role()
     user = auth.current_user()
+    q = request.args.get("q") or None
+    explicit_status = request.args.get("status") or None
+    pending_ra = bool(request.args.get("pending_ra"))
+    # Default to the active work queue; a specific status, search, or risk
+    # filter implies the user wants to reach beyond it, so show everything.
+    view = request.args.get("view") or ("all" if (q or explicit_status or pending_ra) else "active")
+    statuses = None if view == "all" else _STATUS_VIEWS.get(view, _STATUS_VIEWS["active"])
     rows = db.list_vulnerabilities(
-        status=request.args.get("status") or None,
+        status=explicit_status,
+        statuses=statuses,
         severity=request.args.get("severity") or None,
         assignee_id=int(request.args["assignee"]) if request.args.get("assignee") else None,
         owner_filter=request.args.get("owner") or None,
@@ -208,8 +238,8 @@ def findings_list():
         tag=request.args.get("tag") or None,
         kev_only=bool(request.args.get("kev")),
         overdue_only=bool(request.args.get("overdue")),
-        q=request.args.get("q") or None,
-        risk_pending=bool(request.args.get("pending_ra")),
+        q=q,
+        risk_pending=pending_ra,
         sort=request.args.get("sort") or "severity",
     )
     users = auth.list_users()
@@ -222,6 +252,7 @@ def findings_list():
         current_user_id=int(user["id"]) if user else None,
         today=date.today().isoformat(),
         role=role,
+        view=view,
         filters=request.args,
         hide_sidebar=True,
     )
@@ -273,6 +304,12 @@ def detail(vuln_id: int):
         refs=refs,
     )
     next_step = _next_step(v, role, len(evidence))
+    closure_submitter = None
+    if v.get("closure_submitted_by"):
+        for u in users:
+            if int(u["id"]) == int(v["closure_submitted_by"]):
+                closure_submitter = u["username"]
+                break
     return render_template(
         "security/vulnerabilities/detail.html",
         v=v,
@@ -285,6 +322,9 @@ def detail(vuln_id: int):
         refs=refs,
         remediation_links=remediation_links,
         next_step=next_step,
+        status_group=workflow.status_group(v.get("status")),
+        technician_status_choices=workflow.TECHNICIAN_STATUS_CHOICES,
+        closure_submitter=closure_submitter,
         role=role,
         hide_sidebar=True,
     )
@@ -309,6 +349,13 @@ def action(vuln_id: int):
                 false_positive_reason=request.form.get("false_positive_reason") or "",
                 duplicate_of_id=int(request.form["duplicate_of"]) if request.form.get("duplicate_of") else None,
                 admin_override=role == "admin",
+            )
+        elif act == "submit_closure":
+            workflow.submit_for_closure(
+                vuln_id,
+                note=request.form.get("note") or "",
+                user=user,
+                role=role,
             )
         elif act == "assign":
             aid = request.form.get("assignee_id")
@@ -371,6 +418,24 @@ def approve_risk(vuln_id: int):
         user=auth.current_user(),
         role=_role(),
     )
+    return redirect(url_for("vuln.detail", vuln_id=vuln_id))
+
+
+@bp.route("/<int:vuln_id>/approve-closure", methods=["POST"])
+@authz.require_auditor(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def approve_closure(vuln_id: int):
+    auth.verify_csrf()
+    try:
+        workflow.decide_closure(
+            vuln_id,
+            approve=bool(request.form.get("approve")),
+            note=request.form.get("note") or "",
+            user=auth.current_user(),
+            role=_role(),
+        )
+    except workflow.WorkflowError as e:
+        return redirect(url_for("vuln.detail", vuln_id=vuln_id, error=str(e)))
     return redirect(url_for("vuln.detail", vuln_id=vuln_id))
 
 
