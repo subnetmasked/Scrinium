@@ -115,9 +115,13 @@ def submit_for_resolution(
         raise WorkflowError("This finding is already resolved.")
     explanation = (note or "").strip()
     fp_reason = (false_positive_reason or "").strip()
+    # A message is always required so the auditor understands what was done.
+    if not (explanation or fp_reason):
+        raise WorkflowError("Add a message describing what you did before submitting for approval.")
+    # Mitigated/closed must be backed by evidence the auditor can review.
     if proposed_status in ("mitigated", "closed"):
         if db.evidence_count(vuln_id) < 1:
-            raise WorkflowError("Attach at least one evidence file before submitting this outcome.")
+            raise WorkflowError("Attach at least one evidence file (Evidence tab) before submitting this outcome.")
     updates = {
         "status": "pending_review",
         "proposed_status": proposed_status,

@@ -120,7 +120,7 @@
         {% if next_step.focus %}<button type="button" class="sec-next-step-jump" data-jump="{{ next_step.focus }}">Take me there</button>{% endif %}
       </div>
 
-      {% set can_work = role in ('admin','technician') and (status_group == 'active' or role == 'admin') %}
+      {% set can_work = role in ('admin','technician') and status_group == 'active' %}
 
       {% if status == 'pending_review' and role in ('admin','auditor') %}
       <div class="sec-side-card accent-border" data-card="approve-resolution">
@@ -146,43 +146,40 @@
       {% endif %}
 
       {% if can_work %}
-      <div class="sec-side-card accent-border" data-card="submit-resolution">
-        <h3>Final outcome</h3>
-        <p class="muted small">Choose the outcome and send it to an auditor. Mitigated/closed require evidence; no extra message is required to submit.</p>
-        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="action" value="submit_resolution">
-          <label><span>Proposed outcome</span>
-            <select name="proposed_status" data-resolution-select>
-              {% for s in resolution_status_choices %}
-                <option value="{{ s }}">{{ s }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <button class="btn primary" type="submit">Submit for auditor approval</button>
-        </form>
-      </div>
-      {% endif %}
-
-      {% if can_work %}
       <div class="sec-side-card" data-card="status">
         <h3>Update status</h3>
-        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack" data-status-form>
+        <p class="muted small">Working statuses save right away. Closing outcomes (mitigated, closed, won't fix, false positive) are sent to an auditor for approval.</p>
+        <form method="post" action="{{ url_for('vuln.action', vuln_id=v.id) }}" class="sec-form-stack">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="status">
           <label><span>Status</span>
             <select name="status" data-status-select>
-              {% for s in technician_status_choices %}
-                <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s }}</option>
-              {% endfor %}
+              <optgroup label="Working">
+                {% for s in technician_status_choices %}
+                  <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </optgroup>
+              <optgroup label="Close (needs auditor approval)">
+                {% for s in resolution_status_choices %}
+                  <option value="{{ s }}">{{ s }}</option>
+                {% endfor %}
+              </optgroup>
             </select>
           </label>
+          <p class="muted small sec-resolve-hint" data-resolve-hint hidden>
+            Sent to an auditor for approval.
+            {% if evidence and evidence|length > 0 %}
+              {{ evidence|length }} evidence file{{ 's' if evidence|length != 1 else '' }} attached.
+            {% else %}
+              <strong>Mitigated/Closed require evidence</strong> — attach proof on the Evidence tab first.
+            {% endif %}
+          </p>
           <label data-when="false_positive" hidden><span>False-positive reason</span><input name="false_positive_reason" value="{{ v.false_positive_reason or '' }}"></label>
           <label data-when="duplicate" hidden><span>Duplicate of (finding ID)</span><input name="duplicate_of" type="number" min="1" placeholder="e.g. 42"></label>
-          <label><span>Explanation <em class="req-mark">required</em></span>
-            <textarea name="note" rows="3" required placeholder="Why are you changing the status? This is saved to the timeline."></textarea>
+          <label><span>Explanation / message <em class="req-mark">required</em></span>
+            <textarea name="note" rows="3" required placeholder="Why are you changing the status? This is saved to the timeline and shown to the auditor."></textarea>
           </label>
-          <button class="btn primary" type="submit">Save status</button>
+          <button class="btn primary" type="submit" data-status-submit>Save status</button>
         </form>
       </div>
 
@@ -310,21 +307,27 @@
       });
     });
 
-    // Status form: reveal contextual fields for the chosen status
+    // Single status control: working statuses save directly; a closing outcome
+    // is routed to the auditor by the server. This script only reveals helper
+    // fields and updates labels — the form always posts action=status, so
+    // submission never depends on JavaScript running.
     const sel = document.querySelector('[data-status-select]');
     if (sel) {
+      const CLOSING = ['mitigated', 'closed', 'wont_fix', 'false_positive'];
       const form = sel.closest('form');
+      const hint = form.querySelector('[data-resolve-hint]');
+      const submitBtn = form.querySelector('[data-status-submit]');
       const sync = () => {
+        const val = sel.value;
+        const closing = CLOSING.includes(val);
         form.querySelectorAll('[data-when]').forEach((el) => {
-          const match = el.dataset.when === sel.value;
+          const match = el.dataset.when === val;
           el.hidden = !match;
           const input = el.querySelector('input, textarea, select');
-          if (input) {
-            if (sel.value === 'duplicate' && el.dataset.when === 'duplicate') {
-              input.required = match;
-            }
-          }
+          if (input && el.dataset.when === 'duplicate') input.required = match;
         });
+        if (hint) hint.hidden = !closing;
+        if (submitBtn) submitBtn.textContent = closing ? 'Submit for auditor approval' : 'Save status';
       };
       sel.addEventListener('change', sync);
       sync();

@@ -124,8 +124,8 @@ def _next_step(v: dict, role: str, evidence_count: int) -> dict:
         return {
             "tone": "action",
             "title": "Submit the final outcome",
-            "detail": "When work is done, submit Mitigated, Closed, Won't fix, or False positive for auditor approval.",
-            "focus": "submit-resolution",
+            "detail": "When work is done, attach evidence, then set the status to Mitigated, Closed, Won't fix, or False positive to send it for auditor approval.",
+            "focus": "status",
         }
     return {
         "tone": "action",
@@ -336,16 +336,29 @@ def action(vuln_id: int):
     act = request.form.get("action") or ""
     try:
         if act == "status":
-            workflow.set_status(
-                vuln_id,
-                request.form.get("status") or "",
-                user=user,
-                role=role,
-                note=request.form.get("note") or "",
-                false_positive_reason=request.form.get("false_positive_reason") or "",
-                duplicate_of_id=int(request.form["duplicate_of"]) if request.form.get("duplicate_of") else None,
-                admin_override=role == "admin",
-            )
+            new_status = request.form.get("status") or ""
+            if new_status in workflow.FINAL_APPROVAL_STATUSES:
+                # A closure outcome chosen in the status dropdown is a request for
+                # auditor sign-off, not an immediate change.
+                workflow.submit_for_resolution(
+                    vuln_id,
+                    proposed_status=new_status,
+                    note=request.form.get("note") or "",
+                    false_positive_reason=request.form.get("false_positive_reason") or "",
+                    user=user,
+                    role=role,
+                )
+            else:
+                workflow.set_status(
+                    vuln_id,
+                    new_status,
+                    user=user,
+                    role=role,
+                    note=request.form.get("note") or "",
+                    false_positive_reason=request.form.get("false_positive_reason") or "",
+                    duplicate_of_id=int(request.form["duplicate_of"]) if request.form.get("duplicate_of") else None,
+                    admin_override=role == "admin",
+                )
         elif act == "submit_resolution":
             workflow.submit_for_resolution(
                 vuln_id,
