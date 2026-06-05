@@ -10,6 +10,8 @@
   <nav class="sec-subnav" aria-label="Vulnerability manager">
     <a class="sec-subnav-link{% if ep == 'vuln.dashboard' %} active{% endif %}" href="{{ url_for('vuln.dashboard') }}">Dashboard</a>
     <a class="sec-subnav-link{% if on_findings and cur_view not in ('review','resolved') %} active{% endif %}" href="{{ url_for('vuln.findings_list') }}">Findings</a>
+    <a class="sec-subnav-link{% if ep in ('vuln.cve_registry_page','vuln.cve_detail') %} active{% endif %}" href="{{ url_for('vuln.cve_registry_page') }}">CVE Registry</a>
+    <a class="sec-subnav-link{% if ep == 'vuln.host_registry_page' %} active{% endif %}" href="{{ url_for('vuln.host_registry_page') }}">Host Registry</a>
     {% if role in ('admin','auditor') %}
       <a class="sec-subnav-link{% if on_findings and cur_view == 'review' %} active{% endif %}" href="{{ url_for('vuln.findings_list', view='review') }}">Reviews</a>
       <a class="sec-subnav-link{% if on_findings and cur_view == 'resolved' %} active{% endif %}" href="{{ url_for('vuln.findings_list', view='resolved') }}">Closed</a>

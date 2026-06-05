@@ -205,6 +205,12 @@ Package(
 | ------ | ---- | ------- | ---- |
 | GET | `/` | `dashboard` | package login |
 | GET | `/findings` | `findings_list` | package login |
+| GET | `/cves` | `cve_registry_page` | package login |
+| GET | `/cves/<cve_id>` | `cve_detail` | package login |
+| POST | `/cves/<cve_id>/ignores` | `add_ignore` | technician |
+| POST | `/ignores/<rule_id>/delete` | `delete_ignore` | technician |
+| GET | `/hosts` | `host_registry_page` | package login |
+| POST | `/hosts/<host_id>/edit` | `edit_host` | technician |
 | GET | `/duplicates` | `duplicates_page` | auditor |
 | GET/POST | `/import` | `import_page` | technician |
 | GET | `/exports` | `exports_page` | auditor |
@@ -229,6 +235,7 @@ Package(
 | `import_data.py` | CSV + XLSX import (Greenbone-style columns), `ImportResult` |
 | `scanner.py` | Generic REST client, field/severity JSON maps, pagination |
 | `sync.py` | `run_sync()`, scheduled background thread, reopen on re-detect |
+| `inventory.py` | CVE/Host registries, ignore rules, ingestion screening (`ingest_screen`) |
 | `workflow.py` | Status transitions, SLA on triage, risk acceptance, evidence-gated close |
 | `export.py` | CSV registers, JSON snapshot, audit-pack ZIP |
 | `demo.py` | `seed_demo_vulnerability()` — rich smoke-test data (`local-smoke-1`) |
@@ -256,14 +263,22 @@ Import uses `external_id = import:{hash[:32]}`; API sync uses scanner’s id; me
 
 **`vuln_comments`**, **`vuln_tags`** + **`vuln_tag_map`**, **`vuln_events`**, **`vuln_evidence`**, **`sync_runs`**
 
-Migrate adds `identity_key` column on existing installs and backfills.
+**`cve_registry`** — `cve_id` (PK), `first_seen`, `last_seen`; auto-populated on ingestion, backfilled from existing findings.
+
+**`host_registry`** — `hostname` (UNIQUE), `os_version`, `notes`, `first_seen`, `last_seen`; OS/notes edited in Host Registry UI.
+
+**`vuln_ignore_rules`** — per-CVE ignore by `host` or `os_version`; forward-looking only (ingestion skip + log). Host rules are entered via a tag-style token input (`add_ignore` reads `request.form.getlist("host")`); `add_ignore_rules` trims each name and canonicalizes casing to the registry when the host is known. `os_version` is free-text. `UNIQUE(cve_id, type, value)` dedupes.
+
+**`vuln_ignore_log`** — audit trail when a finding is skipped by an ignore rule.
+
+Migrate adds `identity_key` column on existing installs, backfills identity keys and CVE/Host registries.
 
 #### Templates (`templates/security/`)
 
 | Template | Purpose |
 | -------- | ------- |
 | `vuln_base.html` | Extends `base.html`, `area-security` body class, loads `security.css` |
-| `_vuln_nav.html` | Sub-nav: Dashboard, Findings, Import, Duplicates, Exports, Activity |
+| `_vuln_nav.html` | Sub-nav: Dashboard, Findings, CVE Registry, Host Registry, Import, Duplicates, Exports, Activity |
 | `vulnerabilities/dashboard.html` | KPIs, severity bars, priority queue (owner column), live search, owner quick-links |
 | `vulnerabilities/list.html` | Filters (status/severity/owner/host/sort), bulk bar, findings table |
 | `vulnerabilities/detail.html` | Tabs (Overview / Remediation / Activity), workflow sidebar |
@@ -271,6 +286,9 @@ Migrate adds `identity_key` column on existing installs and backfills.
 | `vulnerabilities/duplicates.html` | Duplicate group review |
 | `vulnerabilities/exports.html` | Export cards |
 | `vulnerabilities/activity.html` | Event log table |
+| `vulnerabilities/cve_registry.html` | CVE table with external links and ignore counts |
+| `vulnerabilities/cve_detail.html` | Per-CVE ignore rule management (host token/tag input + datalist, OS free-text) |
+| `vulnerabilities/host_registry.html` | Host table with OS/notes editing |
 | `admin_settings.html` | Package + scanner admin (extends `admin_base.html`) |
 | `package.html` | Security hub module cards |
 

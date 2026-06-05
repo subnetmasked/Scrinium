@@ -1109,3 +1109,106 @@
   gap: 0.5rem;
   margin-top: 0.75rem;
 }
+
+/* ---------- Registry row actions ---------- */
+
+.sec-row-actions {
+  position: relative;
+  display: inline-block;
+}
+.sec-row-actions summary {
+  list-style: none;
+  cursor: pointer;
+}
+.sec-row-actions summary::-webkit-details-marker {
+  display: none;
+}
+.sec-action-menu {
+  position: absolute;
+  right: 0;
+  z-index: 5;
+  min-width: 10rem;
+  margin: 0.25rem 0 0;
+  padding: 0.35rem 0;
+  list-style: none;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.sec-action-menu li a {
+  display: block;
+  padding: 0.35rem 0.75rem;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+.sec-action-menu li a:hover {
+  background: var(--selection);
+  color: var(--accent);
+}
+.sec-host-edit-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.sec-host-edit-form input.small {
+  min-width: 9rem;
+}
+
+/* ---------- Token / tag input ---------- */
+
+.sec-token-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  cursor: text;
+}
+.sec-token-input:focus-within {
+  border-color: var(--accent);
+}
+.sec-token-input input[type="text"] {
+  flex: 1;
+  min-width: 12rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  padding: 0.2rem 0.1rem;
+}
+.sec-token-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.2rem 0.1rem 0.55rem;
+  border-radius: 99px;
+  background: var(--selection);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.sec-token-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 99px;
+}
+.sec-token-x:hover {
+  color: var(--danger);
+  background: var(--bg-elev-2);
+}

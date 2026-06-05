@@ -13,7 +13,7 @@ import audit
 from flask import Flask
 
 from packages import authz
-from packages.security.modules.vulnerabilities import db, identity, remediation, scanner
+from packages.security.modules.vulnerabilities import db, identity, inventory as registry, remediation, scanner
 
 logger = logging.getLogger(__name__)
 PKG = "security"
@@ -63,7 +63,7 @@ def run_sync(*, trigger: str = "manual") -> dict:
         return {"ok": False, "message": "Module disabled."}
     settings = scanner.scanner_settings()
     run_id = db.start_sync_run(trigger)
-    added = updated = merged = reopened = 0
+    added = updated = merged = reopened = skipped = 0
     errors: list[str] = []
     try:
         result = scanner.fetch_all(settings)
@@ -76,6 +76,14 @@ def run_sync(*, trigger: str = "manual") -> dict:
         for f in result.findings:
             seen_ext.add(f.external_id)
             fields = _finding_to_fields(f)
+            if registry.ingest_screen(
+                fields.get("cve"),
+                fields.get("host"),
+                fields.get("ip"),
+                when=fields.get("last_seen"),
+            ):
+                skipped += 1
+                continue
             vid, created, was_merged = db.upsert_vulnerability(fields)
             if created:
                 added += 1
@@ -103,18 +111,22 @@ def run_sync(*, trigger: str = "manual") -> dict:
                 "updated": updated,
                 "merged": merged,
                 "reopened": reopened,
+                "skipped": skipped,
             },
         )
         merge_part = f", {merged} linked to existing import" if merged else ""
+        skip_part = f", {skipped} ignored by rule" if skipped else ""
         return {
             "ok": True,
             "message": (
-                f"Sync complete: {added} added, {updated} updated{merge_part}, {reopened} reopened."
+                f"Sync complete: {added} added, {updated} updated{merge_part}, "
+                f"{reopened} reopened{skip_part}."
             ),
             "added": added,
             "updated": updated,
             "merged": merged,
             "reopened": reopened,
+            "skipped": skipped,
         }
     except Exception as e:
         logger.exception("vuln sync failed")

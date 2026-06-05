@@ -780,8 +780,10 @@ Routes under `/security/vulnerabilities/`:
 | Page | Path | Purpose |
 | ---- | ---- | ------- |
 | Dashboard | `/` | KPIs, severity breakdown, priority queue with **owner** column, live search |
-| Findings | `/findings` | Filterable table (incl. owner filter), bulk assign/status |
+| Findings | `/findings` | Filterable table (incl. owner filter), bulk assign/status, bulk close |
 | Finding detail | `/<id>` | Overview, remediation links, workflow sidebar, evidence, comments, timeline |
+| CVE Registry | `/cves` | Auto-populated list of seen CVEs; external links, ignore-rule management |
+| Host Registry | `/hosts` | Auto-populated list of seen hosts; OS version / notes editing |
 | Import | `/import` | Upload CSV or Excel (Greenbone/OpenVAS-style exports) |
 | Duplicates | `/duplicates` | Review possible duplicate groups (auditors) |
 | Exports | `/exports` | CSV registers, JSON snapshot, audit-pack ZIP |
@@ -816,6 +818,38 @@ The scanner’s `external_id` is preferred over import-derived IDs when merging.
 
 Use **Duplicates** (or the dashboard KPI) to find legacy pairs that pre-date this
 logic; mark extras as `duplicate` in workflow.
+
+#### CVE & Host registries
+
+The **CVE Registry** and **Host Registry** are populated automatically — every
+ingested finding (scanner sync or CSV/Excel import) records the CVE and host it
+was seen on, with first/last-seen timestamps. There is no manual "add" step; both
+lists are also backfilled from existing findings on first migration.
+
+- **CVE Registry** (`/cves`) — one row per CVE with first/last seen, active finding
+  count, ignore-rule count, external links (NVD, MITRE), and **Manage ignores**.
+- **Host Registry** (`/hosts`) — one row per host with OS version, notes, first/last
+  seen, inline editing, and a link to that host's active findings.
+
+#### Ignore rules
+
+From a CVE's **Manage ignores** page (`/cves/<cve_id>`) technicians can suppress a
+CVE for a defined scope. Rules are **forward-looking only** — they are checked
+*before* a finding is created or reopened during ingestion. A skipped finding is
+**never silently dropped**: each skip is written to `vuln_ignore_log` and the audit
+trail.
+
+A rule scopes by either:
+
+- **Host** — add one or many hosts using a tag-style input: type a hostname, press
+  **Enter** (or comma) to turn it into a chip, then add the next one. Suggestions
+  autocomplete from the Host Registry, but any name can be entered (e.g. a host not
+  yet seen by a scan). Matching is case-insensitive.
+- **OS version** — free-text, matched case-insensitively against the OS version
+  recorded for the finding's host in the Host Registry.
+
+Every rule requires a **reason** and is stamped with the user who added it and the
+date.
 
 #### Remediation text
 

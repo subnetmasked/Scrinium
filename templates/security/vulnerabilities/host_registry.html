@@ -1,0 +1,54 @@
+{% extends "security/vuln_base.html" %}
+{% block title %}Host Registry — {{ site_name }}{% endblock %}
+{% block sec_page_title %}<h1>Host Registry</h1>{% endblock %}
+{% block sec_page_subtitle %}
+  <p class="muted small">Every host or IP seen in findings. OS version and notes are maintained here for ignore matching.</p>
+{% endblock %}
+{% block vuln_body %}
+  <article class="sec-panel">
+    <div class="sec-table-wrap">
+      <table class="sec-findings-table">
+        <thead>
+          <tr>
+            <th>Hostname</th>
+            <th>First seen</th>
+            <th>Last seen</th>
+            <th>OS version / Notes</th>
+            <th style="width:8rem">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td><code>{{ r.hostname }}</code></td>
+              <td class="small">{{ (r.first_seen or '')[:10] }}</td>
+              <td class="small">{{ (r.last_seen or '')[:10] }}</td>
+              <td class="small">
+                {% if role in ('admin','technician') %}
+                  <form method="post" action="{{ url_for('vuln.edit_host', host_id=r.id) }}" class="sec-host-edit-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input name="os_version" value="{{ r.os_version or '' }}" placeholder="OS version, e.g. ubuntu 22.04" class="small">
+                    <input name="notes" value="{{ r.notes or '' }}" placeholder="Notes…" class="small">
+                    <button class="btn small" type="submit">Save</button>
+                  </form>
+                {% else %}
+                  {{ r.os_version or '—' }}{% if r.notes %}<br><span class="muted">{{ r.notes }}</span>{% endif %}
+                {% endif %}
+              </td>
+              <td>
+                <details class="sec-row-actions">
+                  <summary class="btn small">Actions</summary>
+                  <ul class="sec-action-menu">
+                    <li><a href="{{ url_for('vuln.findings_list', host=r.hostname, view='all') }}">View active findings</a></li>
+                  </ul>
+                </details>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="muted" style="padding:2rem;text-align:center">No hosts recorded yet. Import or sync findings to populate this list.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+{% endblock %}

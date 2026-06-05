@@ -1,0 +1,166 @@
+{% extends "security/vuln_base.html" %}
+{% block title %}{{ cve.cve_id }} — CVE Registry — {{ site_name }}{% endblock %}
+{% block sec_page_title %}<h1><code>{{ cve.cve_id }}</code></h1>{% endblock %}
+{% block sec_page_subtitle %}
+  <p class="muted small">
+    First seen {{ (cve.first_seen or '')[:10] }} · Last seen {{ (cve.last_seen or '')[:10] }}
+    · <a href="https://nvd.nist.gov/vuln/detail/{{ cve.cve_id }}" target="_blank" rel="noopener">NVD</a>
+    · <a href="https://cve.mitre.org/cgi-bin/cvename.cgi?name={{ cve.cve_id }}" target="_blank" rel="noopener">MITRE</a>
+    · <a href="{{ url_for('vuln.findings_list', q=cve.cve_id, view='all') }}">View findings</a>
+  </p>
+{% endblock %}
+{% block vuln_body %}
+  <article class="sec-panel" style="margin-bottom:1rem">
+    <h2>Ignore rules</h2>
+    <p class="muted small">Rules apply to <strong>future</strong> imports and sync only. Existing findings are not changed.</p>
+    {% if rules %}
+      <div class="sec-table-wrap">
+        <table class="sec-findings-table">
+          <thead>
+            <tr><th>Type</th><th>Value</th><th>Reason</th><th>Added by</th><th>Date</th>{% if role in ('admin','technician') %}<th></th>{% endif %}</tr>
+          </thead>
+          <tbody>
+            {% for rule in rules %}
+              <tr>
+                <td class="small">{{ rule.type }}</td>
+                <td class="small"><code>{{ rule.value }}</code></td>
+                <td class="small">{{ rule.reason }}</td>
+                <td class="small">{% if rule.added_by %}{{ label_for_id(rule.added_by) }}{% else %}{{ label_for_username(rule.added_by_name) }}{% endif %}</td>
+                <td class="small">{{ (rule.created_at or '')[:10] }}</td>
+                {% if role in ('admin','technician') %}
+                  <td>
+                    <form method="post" action="{{ url_for('vuln.delete_ignore', rule_id=rule.id) }}" onsubmit="return confirm('Delete this ignore rule?');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button class="btn small" type="submit">Delete</button>
+                    </form>
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No ignore rules for this CVE.</p>
+    {% endif %}
+  </article>
+
+  {% if role in ('admin','technician') %}
+  <article class="sec-panel">
+    <h2>Add ignore rule</h2>
+    <form method="post" action="{{ url_for('vuln.add_ignore', cve_id=cve.cve_id) }}" class="sec-form-stack" id="ignore-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label><span>Type</span>
+        <select name="type" id="ignore-type" required>
+          <option value="host">Host</option>
+          <option value="os_version">OS version</option>
+        </select>
+      </label>
+      <label id="ignore-host-field"><span>Host(s)</span>
+        <div class="sec-token-input" id="host-token-input" data-entry="host-token-entry">
+          <input type="text" id="host-token-entry" list="host-datalist" autocomplete="off"
+                 placeholder="Type a hostname, press Enter…">
+        </div>
+        <datalist id="host-datalist">
+          {% for h in hosts %}<option value="{{ h.hostname }}">{% endfor %}
+        </datalist>
+        <span class="muted small">Type a hostname and press Enter (or comma) to add it. Repeat for as many hosts as you need. Suggestions come from the Host Registry, but you can enter any name.</span>
+      </label>
+      <label id="ignore-os-field" hidden><span>OS version</span>
+        <input name="os_version" placeholder="e.g. ubuntu 22.04">
+        <span class="muted small">Case-insensitive exact match against the host registry OS field.</span>
+      </label>
+      <label><span>Reason <em class="req-mark">required</em></span>
+        <textarea name="reason" rows="3" required placeholder="Why should this CVE be ignored for the selected scope?"></textarea>
+      </label>
+      <button class="btn primary" type="submit">Add rule</button>
+    </form>
+  </article>
+  <script>
+  (function () {
+    const sel = document.getElementById('ignore-type');
+    const hostField = document.getElementById('ignore-host-field');
+    const osField = document.getElementById('ignore-os-field');
+    if (sel) {
+      const sync = () => {
+        const isHost = sel.value === 'host';
+        hostField.hidden = !isHost;
+        osField.hidden = isHost;
+      };
+      sel.addEventListener('change', sync);
+      sync();
+    }
+
+    // GitHub-style token input for hosts.
+    const box = document.getElementById('host-token-input');
+    const entry = document.getElementById('host-token-entry');
+    const form = document.getElementById('ignore-form');
+    if (box && entry && form) {
+      const added = new Set();
+
+      const addToken = (raw) => {
+        const val = (raw || '').trim().replace(/,$/, '').trim();
+        if (!val) return;
+        const key = val.toLowerCase();
+        if (added.has(key)) return;
+        added.add(key);
+
+        const chip = document.createElement('span');
+        chip.className = 'sec-token-chip';
+
+        const label = document.createElement('span');
+        label.textContent = val;
+        chip.appendChild(label);
+
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'host';
+        hidden.value = val;
+        chip.appendChild(hidden);
+
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.className = 'sec-token-x';
+        x.setAttribute('aria-label', 'Remove ' + val);
+        x.textContent = '\u00d7';
+        x.addEventListener('click', () => {
+          chip.remove();
+          added.delete(key);
+          entry.focus();
+        });
+        chip.appendChild(x);
+
+        box.insertBefore(chip, entry);
+      };
+
+      entry.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ',') {
+          e.preventDefault();
+          addToken(entry.value);
+          entry.value = '';
+        } else if (e.key === 'Backspace' && !entry.value) {
+          const chips = box.querySelectorAll('.sec-token-chip');
+          const last = chips[chips.length - 1];
+          if (last) {
+            last.querySelector('.sec-token-x').click();
+          }
+        }
+      });
+
+      // Clicking anywhere in the box focuses the text entry.
+      box.addEventListener('click', () => entry.focus());
+
+      // Commit any pending text when the form is submitted.
+      form.addEventListener('submit', () => {
+        if (entry.value.trim()) {
+          addToken(entry.value);
+          entry.value = '';
+        }
+      });
+    }
+  })();
+  </script>
+  {% endif %}
+
+  <p class="small" style="margin-top:1rem"><a href="{{ url_for('vuln.cve_registry_page') }}">← Back to CVE Registry</a></p>
+{% endblock %}

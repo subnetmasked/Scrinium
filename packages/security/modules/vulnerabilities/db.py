@@ -120,6 +120,42 @@ CREATE TABLE IF NOT EXISTS sync_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_vuln_status ON vuln_workflow (status);
 CREATE INDEX IF NOT EXISTS idx_vuln_severity ON vulnerabilities (severity);
+CREATE TABLE IF NOT EXISTS cve_registry (
+    cve_id      TEXT PRIMARY KEY,
+    first_seen  TEXT NOT NULL,
+    last_seen   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS host_registry (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    hostname    TEXT UNIQUE NOT NULL COLLATE NOCASE,
+    os_version  TEXT,
+    notes       TEXT,
+    first_seen  TEXT NOT NULL,
+    last_seen   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS vuln_ignore_rules (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    cve_id          TEXT NOT NULL,
+    type            TEXT NOT NULL,
+    value           TEXT NOT NULL,
+    reason          TEXT NOT NULL,
+    added_by        INTEGER,
+    added_by_name   TEXT,
+    created_at      TEXT NOT NULL,
+    UNIQUE (cve_id, type, value)
+);
+CREATE INDEX IF NOT EXISTS idx_ignore_rules_cve ON vuln_ignore_rules (cve_id);
+CREATE TABLE IF NOT EXISTS vuln_ignore_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT NOT NULL,
+    cve_id      TEXT,
+    host        TEXT,
+    os_version  TEXT,
+    rule_type   TEXT,
+    rule_id     INTEGER,
+    reason      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ignore_log_ts ON vuln_ignore_log (ts DESC);
 """
 
 
@@ -160,6 +196,57 @@ def migrate(conn: sqlite3.Connection) -> None:
         """
     )
     _backfill_identity_keys(conn)
+    _backfill_registries(conn)
+
+
+def _backfill_registries(conn: sqlite3.Connection) -> None:
+    """Populate CVE/Host registries from existing findings (idempotent)."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO cve_registry (cve_id, first_seen, last_seen)
+        SELECT UPPER(TRIM(cve)), MIN(COALESCE(first_seen, created_at)), MAX(COALESCE(last_seen, updated_at))
+        FROM vulnerabilities
+        WHERE cve IS NOT NULL AND TRIM(cve) != ''
+        GROUP BY UPPER(TRIM(cve))
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO host_registry (hostname, first_seen, last_seen)
+        SELECT DISTINCT TRIM(COALESCE(NULLIF(host, ''), ip)) AS hostname,
+               MIN(COALESCE(first_seen, created_at)),
+               MAX(COALESCE(last_seen, updated_at))
+        FROM vulnerabilities
+        WHERE TRIM(COALESCE(NULLIF(host, ''), ip)) != ''
+        GROUP BY hostname
+        """
+    )
+    # Refresh last_seen for rows that already existed before backfill.
+    conn.execute(
+        """
+        UPDATE cve_registry SET last_seen = (
+            SELECT MAX(COALESCE(v.last_seen, v.updated_at))
+            FROM vulnerabilities v WHERE UPPER(TRIM(v.cve)) = cve_registry.cve_id
+        )
+        WHERE EXISTS (
+            SELECT 1 FROM vulnerabilities v WHERE UPPER(TRIM(v.cve)) = cve_registry.cve_id
+        )
+        """
+    )
+    conn.execute(
+        """
+        UPDATE host_registry SET last_seen = (
+            SELECT MAX(COALESCE(v.last_seen, v.updated_at))
+            FROM vulnerabilities v
+            WHERE TRIM(COALESCE(NULLIF(v.host, ''), v.ip)) = host_registry.hostname COLLATE NOCASE
+        )
+        WHERE EXISTS (
+            SELECT 1 FROM vulnerabilities v
+            WHERE TRIM(COALESCE(NULLIF(v.host, ''), v.ip)) = host_registry.hostname COLLATE NOCASE
+        )
+        """
+    )
 
 
 def _row_identity_key(row: dict) -> str:

@@ -24,7 +24,17 @@ from werkzeug.utils import secure_filename
 import audit
 import auth
 from packages import authz
-from packages.security.modules.vulnerabilities import db, demo, export, import_data, remediation, scanner, sync, workflow
+from packages.security.modules.vulnerabilities import (
+    db,
+    demo,
+    export,
+    import_data,
+    inventory as registry,
+    remediation,
+    scanner,
+    sync,
+    workflow,
+)
 
 PKG = "security"
 MOD = "vulnerabilities"
@@ -321,6 +331,105 @@ def duplicates_page():
         role=role,
         hide_sidebar=True,
     )
+
+
+@bp.route("/cves")
+@authz.package_login_required(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def cve_registry_page():
+    return render_template(
+        "security/vulnerabilities/cve_registry.html",
+        rows=registry.list_cves(),
+        role=_role(),
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/cves/<path:cve_id>")
+@authz.package_login_required(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def cve_detail(cve_id: str):
+    cve_id = registry.normalize_cve(cve_id)
+    row = registry.get_cve(cve_id)
+    if not row:
+        abort(404)
+    return render_template(
+        "security/vulnerabilities/cve_detail.html",
+        cve=row,
+        rules=registry.list_ignore_rules(cve_id),
+        hosts=registry.list_hosts(),
+        role=_role(),
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/cves/<path:cve_id>/ignores", methods=["POST"])
+@authz.require_technician(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def add_ignore(cve_id: str):
+    auth.verify_csrf()
+    cve_id = registry.normalize_cve(cve_id)
+    if not registry.get_cve(cve_id):
+        abort(404)
+    rule_type = (request.form.get("type") or "").strip()
+    reason = request.form.get("reason") or ""
+    values: list[str] = []
+    if rule_type == "host":
+        values = request.form.getlist("host")
+    elif rule_type == "os_version":
+        val = (request.form.get("os_version") or "").strip()
+        if val:
+            values = [val]
+    try:
+        n = registry.add_ignore_rules(
+            cve_id, rule_type, values, reason=reason, user=auth.current_user()
+        )
+        if n < 1:
+            return redirect(
+                url_for("vuln.cve_detail", cve_id=cve_id, error="No ignore rules were added.")
+            )
+        return redirect(
+            url_for("vuln.cve_detail", cve_id=cve_id, notice=f"Added {n} ignore rule(s).")
+        )
+    except ValueError as e:
+        return redirect(url_for("vuln.cve_detail", cve_id=cve_id, error=str(e)))
+
+
+@bp.route("/ignores/<int:rule_id>/delete", methods=["POST"])
+@authz.require_technician(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def delete_ignore(rule_id: int):
+    auth.verify_csrf()
+    cve_id = registry.delete_ignore_rule(rule_id)
+    if not cve_id:
+        abort(404)
+    return redirect(url_for("vuln.cve_detail", cve_id=cve_id, notice="Ignore rule deleted."))
+
+
+@bp.route("/hosts")
+@authz.package_login_required(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def host_registry_page():
+    return render_template(
+        "security/vulnerabilities/host_registry.html",
+        rows=registry.list_hosts(),
+        role=_role(),
+        hide_sidebar=True,
+    )
+
+
+@bp.route("/hosts/<int:host_id>/edit", methods=["POST"])
+@authz.require_technician(PKG)
+@authz.module_enabled_required(PKG, MOD)
+def edit_host(host_id: int):
+    auth.verify_csrf()
+    if not registry.update_host(
+        host_id,
+        os_version=request.form.get("os_version"),
+        notes=request.form.get("notes"),
+    ):
+        abort(404)
+    return redirect(url_for("vuln.host_registry_page", notice="Host updated."))
 
 
 @bp.route("/<int:vuln_id>")

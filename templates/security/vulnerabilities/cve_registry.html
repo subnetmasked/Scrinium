@@ -1,0 +1,53 @@
+{% extends "security/vuln_base.html" %}
+{% block title %}CVE Registry — {{ site_name }}{% endblock %}
+{% block sec_page_title %}<h1>CVE Registry</h1>{% endblock %}
+{% block sec_page_subtitle %}
+  <p class="muted small">Every CVE seen in findings. Populated automatically on import and sync.</p>
+{% endblock %}
+{% block vuln_body %}
+  <article class="sec-panel">
+    <div class="sec-table-wrap">
+      <table class="sec-findings-table">
+        <thead>
+          <tr>
+            <th>CVE</th>
+            <th>First seen</th>
+            <th>Last seen</th>
+            <th>Active findings</th>
+            <th>Ignore rules</th>
+            <th style="width:6rem">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td><a href="{{ url_for('vuln.cve_detail', cve_id=r.cve_id) }}"><code>{{ r.cve_id }}</code></a></td>
+              <td class="small">{{ (r.first_seen or '')[:10] }}</td>
+              <td class="small">{{ (r.last_seen or '')[:10] }}</td>
+              <td class="small">
+                {% if r.active_count %}
+                  <a href="{{ url_for('vuln.findings_list', q=r.cve_id, view='all') }}">{{ r.active_count }}</a>
+                {% else %}
+                  0
+                {% endif %}
+              </td>
+              <td class="small">{{ r.ignore_count or 0 }}</td>
+              <td>
+                <details class="sec-row-actions">
+                  <summary class="btn small">Actions</summary>
+                  <ul class="sec-action-menu">
+                    <li><a href="https://nvd.nist.gov/vuln/detail/{{ r.cve_id }}" target="_blank" rel="noopener">NVD</a></li>
+                    <li><a href="https://cve.mitre.org/cgi-bin/cvename.cgi?name={{ r.cve_id }}" target="_blank" rel="noopener">MITRE</a></li>
+                    <li><a href="{{ url_for('vuln.cve_detail', cve_id=r.cve_id) }}">Manage ignores</a></li>
+                  </ul>
+                </details>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="muted" style="padding:2rem;text-align:center">No CVEs recorded yet. Import or sync findings to populate this list.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+{% endblock %}
